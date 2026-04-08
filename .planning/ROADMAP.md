@@ -54,12 +54,21 @@ Success criteria:
 - 恢复后 rotationVersion 递增
 
 #### Phase 4: Real Signing
-- 接入 sign rounds
-- 完成 `deviceLiveShare + serverShare` 签名闭环
-- 统一 signer context
+
+**Goal:** 用 kms-secp256k1 替换 sign stubs，完成 deviceLiveShare + serverShare 签名闭环，在 MpcClient 增加 sign() 方法驱动完整签名 round-trip。
+
+**Requirements:** [MPC-04, MPC-09, MPC-10]
+
+**Plans:** 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Rust SignSession + SignCompletedPayload + 真实 sign_start/sign_continue 实现 + 协议测试
+- [ ] 04-02-PLAN.md — Dart SignResult(r/s/recid) 更新 + MpcClient.sign() 方法 + mock 测试
 
 Success criteria:
 - EVM sign 成功
+- test_sign_full_protocol 通过（in-process Party1+Party2）
+- MpcClient.sign() 返回包含 r, s, recid 的 SignResult
 
 #### Phase 5: Backup and Rotation
 - 导出/导入 `encryptedDeviceBackupShare`
