@@ -148,33 +148,31 @@ class RecoveryResult {
   }
 }
 
-/// Sign completion result per architecture doc §0.7.
+/// Sign completion result per D-02.
+/// Contains ECDSA signature components: r, s, recid.
+/// Caller is responsible for assembling signedTx.
 class SignResult {
-  final String? signature;
-  final String? signedTx;
-  final String? txHash;
+  final String r;
+  final String s;
+  final int recid;
 
   const SignResult({
-    this.signature,
-    this.signedTx,
-    this.txHash,
+    required this.r,
+    required this.s,
+    required this.recid,
   });
 
   factory SignResult.fromJson(Map<String, dynamic> json) {
     return SignResult(
-      signature: json['signature'] as String?,
-      signedTx: json['signedTx'] as String?,
-      txHash: json['txHash'] as String?,
+      r: json['r'] as String,
+      s: json['s'] as String,
+      recid: json['recid'] as int,
     );
   }
 
   @override
   String toString() {
-    return 'SignResult('
-        'signature: $signature, '
-        'signedTx: $signedTx, '
-        'txHash: $txHash'
-        ')';
+    return 'SignResult(r: [REDACTED], s: [REDACTED], recid: $recid)';
   }
 }
 

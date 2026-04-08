@@ -2,11 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:flutter_mpc_wallet/src/bridge/mpc_engine.dart';
-import 'package:flutter_mpc_wallet/src/client/mpc_client.dart';
-import 'package:flutter_mpc_wallet/src/client/mpc_exceptions.dart';
-import 'package:flutter_mpc_wallet/src/dto/mpc_dtos.dart';
-import 'package:flutter_mpc_wallet/src/transport/mpc_transport.dart';
+import 'package:ceres_mpc/src/bridge/mpc_engine.dart';
+import 'package:ceres_mpc/src/client/mpc_client.dart';
+import 'package:ceres_mpc/src/client/mpc_exceptions.dart';
+import 'package:ceres_mpc/src/dto/mpc_dtos.dart';
+import 'package:ceres_mpc/src/transport/mpc_transport.dart';
 
 class MockMpcEngine extends Mock implements MpcEngine {}
 
@@ -197,6 +197,134 @@ void main() {
         ),
         throwsA(isA<MpcProtocolException>()),
       );
+    });
+  });
+
+  group('sign', () {
+    test('completes full sign round-trip when server returns completed',
+        () async {
+      // Mock server init
+      when(() => mockTransport.send('/sign/start', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'sessionId': 'sess_sg1',
+                'serverPayload': {
+                  'eph_key_gen_first_message_party_one': {},
+                  'message_hash': 'a' * 64,
+                },
+              }));
+
+      // Mock Rust signStart -> continue
+      when(() => mockEngine.signStart('sess_sg1', 'my_share', any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'continue',
+                round: 1,
+                clientPayload: 'client_eph_payload',
+              ));
+
+      // Mock server /sign/continue -> completed with {r, s, recid}
+      when(() => mockTransport.send('/sign/continue', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'status': 'completed',
+                'r': 'aabb11',
+                's': 'ccdd22',
+                'recid': 0,
+              }));
+
+      final result = await client.sign(
+        mpcKeyId: 'key_001',
+        messageHash: 'a' * 64,
+        localEncryptedShare: 'my_share',
+      );
+
+      expect(result.r, equals('aabb11'));
+      expect(result.s, equals('ccdd22'));
+      expect(result.recid, equals(0));
+
+      verify(() => mockTransport.send('/sign/start', any())).called(1);
+      verify(() => mockEngine.signStart('sess_sg1', 'my_share', any()))
+          .called(1);
+      verify(() => mockTransport.send('/sign/continue', any())).called(1);
+    });
+
+    test('throws MpcProtocolException when signStart returns error', () async {
+      when(() => mockTransport.send('/sign/start', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'sessionId': 'sess_err',
+                'serverPayload': {'message_hash': 'a' * 64},
+              }));
+
+      when(() => mockEngine.signStart('sess_err', 'share', any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'error',
+                round: 1,
+                errorMessage: 'Invalid share',
+              ));
+
+      expect(
+        () => client.sign(
+          mpcKeyId: 'key_001',
+          messageHash: 'a' * 64,
+          localEncryptedShare: 'share',
+        ),
+        throwsA(isA<MpcProtocolException>().having(
+          (e) => e.message,
+          'message',
+          contains('Invalid share'),
+        )),
+      );
+    });
+
+    test('throws MpcTransportException when transport fails', () async {
+      when(() => mockTransport.send('/sign/start', any()))
+          .thenThrow(Exception('Network error'));
+
+      expect(
+        () => client.sign(
+          mpcKeyId: 'key_001',
+          messageHash: 'a' * 64,
+          localEncryptedShare: 'share',
+        ),
+        throwsA(isA<MpcTransportException>().having(
+          (e) => e.endpoint,
+          'endpoint',
+          equals('/sign/start'),
+        )),
+      );
+    });
+
+    test('full round-trip with Rust signContinue before server completes',
+        () async {
+      when(() => mockTransport.send('/sign/start', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'sessionId': 'sess_sg2',
+                'serverPayload': {'message_hash': 'b' * 64},
+              }));
+
+      when(() => mockEngine.signStart('sess_sg2', 'share2', any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'continue',
+                round: 1,
+                clientPayload: 'eph_payload',
+              ));
+
+      // Server returns non-completed first
+      when(() => mockTransport.send('/sign/continue', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'status': 'completed',
+                'r': 'ff00',
+                's': '1122',
+                'recid': 1,
+              }));
+
+      final result = await client.sign(
+        mpcKeyId: 'key_002',
+        messageHash: 'b' * 64,
+        localEncryptedShare: 'share2',
+      );
+
+      expect(result.r, equals('ff00'));
+      expect(result.s, equals('1122'));
+      expect(result.recid, equals(1));
     });
   });
 }

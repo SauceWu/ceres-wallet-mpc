@@ -130,6 +130,63 @@ class MpcClient {
         'Unexpected recovery state: ${currentResult.status}');
   }
 
+  /// Execute full sign protocol.
+  ///
+  /// Per D-01: [messageHash] is raw 32-byte hash hex (no 0x prefix).
+  /// Per D-03: [localEncryptedShare] is passed by caller — SDK is stateless.
+  /// Per D-02: Returns [SignResult] with r, s, recid.
+  Future<SignResult> sign({
+    required String mpcKeyId,
+    required String messageHash,
+    required String localEncryptedShare,
+  }) async {
+    final initResponse = await _sendToServer(
+      '/sign/start',
+      jsonEncode({'mpcKeyId': mpcKeyId, 'messageHash': messageHash}),
+    );
+    final initData = _parseServerResponse(initResponse);
+    final sessionId = initData['sessionId'] as String;
+
+    final round1 = await _engine.signStart(
+      sessionId,
+      localEncryptedShare,
+      jsonEncode(initData['serverPayload']),
+    );
+    _checkProtocolError(round1);
+
+    var currentResult = round1;
+    while (currentResult.isContinue) {
+      final serverResponse = await _sendToServer(
+        '/sign/continue',
+        jsonEncode({
+          'sessionId': sessionId,
+          'round': currentResult.round,
+          'clientPayload': currentResult.clientPayload,
+        }),
+      );
+      final serverData = _parseServerResponse(serverResponse);
+
+      if (serverData['status'] == 'completed') {
+        return SignResult.fromJson(serverData);
+      }
+
+      currentResult = await _engine.signContinue(
+        sessionId,
+        jsonEncode(serverData['serverPayload'] ?? {}),
+      );
+      _checkProtocolError(currentResult);
+    }
+
+    if (currentResult.isCompleted && currentResult.clientPayload != null) {
+      final payload =
+          jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
+      return SignResult.fromJson(payload);
+    }
+
+    throw MpcProtocolException(
+        'Unexpected sign state: ${currentResult.status}');
+  }
+
   Future<String> _sendToServer(String endpoint, String payload) async {
     try {
       return await _transport.send(endpoint, payload);

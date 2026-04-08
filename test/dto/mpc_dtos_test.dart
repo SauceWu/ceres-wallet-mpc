@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_mpc_wallet/flutter_mpc_wallet.dart';
+import 'package:ceres_mpc/ceres_mpc.dart';
 
 void main() {
   group('KeygenResult.toString redaction', () {
@@ -88,14 +88,23 @@ void main() {
       expect(s, isNot(contains('[REDACTED]')));
     });
 
-    test('SignResult.toString does not contain REDACTED', () {
-      final r = SignResult(
-        signature: 'sig_abc',
-        signedTx: 'tx_123',
-        txHash: 'hash_456',
-      );
+    test('SignResult.toString redacts r and s', () {
+      final r = SignResult(r: 'SECRET_R', s: 'SECRET_S', recid: 1);
       final s = r.toString();
-      expect(s, isNot(contains('[REDACTED]')));
+      expect(s, contains('[REDACTED]'));
+      expect(s, isNot(contains('SECRET_R')));
+      expect(s, isNot(contains('SECRET_S')));
+      expect(s, contains('recid: 1'));
+    });
+  });
+
+  group('SignResult', () {
+    test('fromJson parses r, s, recid correctly', () {
+      final json = {'r': 'aabbcc', 's': 'ddeeff', 'recid': 0};
+      final result = SignResult.fromJson(json);
+      expect(result.r, 'aabbcc');
+      expect(result.s, 'ddeeff');
+      expect(result.recid, 0);
     });
   });
 }
