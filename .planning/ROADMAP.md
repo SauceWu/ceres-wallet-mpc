@@ -28,8 +28,8 @@ Success criteria:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Rust BackupEnvelope struct + derive/decrypt stub 函数 + Rust 测试 + FRB codegen
-- [ ] 02-02-PLAN.md — Dart BackupEnvelope DTO + toString redaction + MpcEngine wrapper + Dart 测试
+- [x] 02-01-PLAN.md — Rust BackupEnvelope struct + derive/decrypt stub 函数 + Rust 测试 + FRB codegen
+- [x] 02-02-PLAN.md — Dart BackupEnvelope DTO + toString redaction + MpcEngine wrapper + Dart 测试
 
 Success criteria:
 - live share 进入 secure storage
