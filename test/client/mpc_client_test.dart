@@ -1,0 +1,202 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:flutter_mpc_wallet/src/bridge/mpc_engine.dart';
+import 'package:flutter_mpc_wallet/src/client/mpc_client.dart';
+import 'package:flutter_mpc_wallet/src/client/mpc_exceptions.dart';
+import 'package:flutter_mpc_wallet/src/dto/mpc_dtos.dart';
+import 'package:flutter_mpc_wallet/src/transport/mpc_transport.dart';
+
+class MockMpcEngine extends Mock implements MpcEngine {}
+
+class MockMpcTransport extends Mock implements MpcTransport {}
+
+void main() {
+  late MockMpcEngine mockEngine;
+  late MockMpcTransport mockTransport;
+  late MpcClient client;
+
+  setUp(() {
+    mockEngine = MockMpcEngine();
+    mockTransport = MockMpcTransport();
+    client = MpcClient(engine: mockEngine, transport: mockTransport);
+  });
+
+  group('keygen', () {
+    test('completes full keygen round-trip and returns KeygenResult', () async {
+      when(() => mockTransport.send('/keygen/start', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'sessionId': 'sess_kg1',
+                'serverPayload': {'round': 1, 'data': 'server_first_msg'},
+              }));
+
+      when(() => mockEngine.keygenStart('sess_kg1', any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'continue',
+                round: 1,
+                clientPayload: 'client_round1_payload',
+              ));
+
+      when(() => mockTransport.send('/keygen/continue', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'serverPayload': {'round': 2, 'data': 'server_second_msg'},
+              }));
+
+      when(() => mockEngine.keygenContinue('sess_kg1', any()))
+          .thenAnswer((_) async => MpcRoundResult(
+                status: 'completed',
+                round: 2,
+                clientPayload: jsonEncode({
+                  'mpc_key_id': 'key_001',
+                  'address': '0x1234567890abcdef1234567890abcdef12345678',
+                  'public_key': '02abc123',
+                  'curve': 'secp256k1',
+                  'threshold': 2,
+                  'key_ref': 'ref_001',
+                  'backup_state': 'pending',
+                  'rotation_version': 1,
+                  'local_encrypted_share': 'encrypted_share_blob',
+                }),
+              ));
+
+      final result = await client.keygen();
+
+      expect(result.mpcKeyId, equals('key_001'));
+      expect(result.address,
+          equals('0x1234567890abcdef1234567890abcdef12345678'));
+      expect(result.publicKey, equals('02abc123'));
+      expect(result.curve, equals('secp256k1'));
+      expect(result.threshold, equals(2));
+      expect(result.rotationVersion, equals(1));
+      expect(result.localEncryptedShare, equals('encrypted_share_blob'));
+
+      verify(() => mockTransport.send('/keygen/start', any())).called(1);
+      verify(() => mockEngine.keygenStart('sess_kg1', any())).called(1);
+      verify(() => mockTransport.send('/keygen/continue', any())).called(1);
+      verify(() => mockEngine.keygenContinue('sess_kg1', any())).called(1);
+    });
+
+    test('throws MpcProtocolException when engine returns error', () async {
+      when(() => mockTransport.send('/keygen/start', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'sessionId': 'sess_err',
+                'serverPayload': {'round': 1},
+              }));
+
+      when(() => mockEngine.keygenStart('sess_err', any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'error',
+                round: 1,
+                errorMessage: 'Protocol verification failed',
+              ));
+
+      expect(
+        () => client.keygen(),
+        throwsA(isA<MpcProtocolException>().having(
+          (e) => e.message,
+          'message',
+          contains('Protocol verification failed'),
+        )),
+      );
+    });
+
+    test('throws MpcTransportException when transport fails', () async {
+      when(() => mockTransport.send('/keygen/start', any()))
+          .thenThrow(Exception('Network timeout'));
+
+      expect(
+        () => client.keygen(),
+        throwsA(isA<MpcTransportException>().having(
+          (e) => e.endpoint,
+          'endpoint',
+          equals('/keygen/start'),
+        )),
+      );
+    });
+  });
+
+  group('recover', () {
+    test('completes full recovery round-trip and returns RecoveryResult',
+        () async {
+      when(() => mockEngine.decryptBackupShare(any(), any()))
+          .thenAnswer((_) async => 'decrypted_backup_share');
+
+      when(() => mockTransport.send('/recovery/start', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'sessionId': 'sess_rc1',
+                'serverPayload': {'round': 1, 'data': 'server_rotation_msg'},
+              }));
+
+      when(() =>
+              mockEngine.recoverStart('sess_rc1', 'decrypted_backup_share', any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'continue',
+                round: 1,
+                clientPayload: 'client_rotation_payload',
+              ));
+
+      when(() => mockTransport.send('/recovery/continue', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'serverPayload': {'round': 2, 'data': 'server_rotation_msg2'},
+              }));
+
+      when(() => mockEngine.recoverContinue('sess_rc1', any()))
+          .thenAnswer((_) async => MpcRoundResult(
+                status: 'completed',
+                round: 2,
+                clientPayload: jsonEncode({
+                  'mpc_key_id': 'key_001',
+                  'address': '0x1234567890abcdef1234567890abcdef12345678',
+                  'public_key': '02abc123',
+                  'rotation_version': 2,
+                  'local_encrypted_share': 'new_encrypted_share',
+                }),
+              ));
+
+      final result = await client.recover(
+        mpcKeyId: 'key_001',
+        encryptedBackupShare: 'encrypted_backup_blob',
+        userBackupSecret: 'user_secret',
+      );
+
+      expect(result.mpcKeyId, equals('key_001'));
+      expect(result.address,
+          equals('0x1234567890abcdef1234567890abcdef12345678'));
+      expect(result.rotationVersion, equals(2));
+      expect(result.localEncryptedShare, equals('new_encrypted_share'));
+
+      verify(() => mockEngine.decryptBackupShare(
+          'encrypted_backup_blob', 'user_secret')).called(1);
+      verify(() => mockTransport.send('/recovery/start', any())).called(1);
+      verify(() => mockEngine.recoverStart(
+          'sess_rc1', 'decrypted_backup_share', any())).called(1);
+    });
+
+    test('throws MpcProtocolException when recover engine returns error',
+        () async {
+      when(() => mockEngine.decryptBackupShare(any(), any()))
+          .thenAnswer((_) async => 'backup_share');
+      when(() => mockTransport.send('/recovery/start', any()))
+          .thenAnswer((_) async => jsonEncode({
+                'sessionId': 'sess_err',
+                'serverPayload': {'round': 1},
+              }));
+      when(() => mockEngine.recoverStart('sess_err', 'backup_share', any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'error',
+                round: 1,
+                errorMessage: 'Recovery verification failed',
+              ));
+
+      expect(
+        () => client.recover(
+          mpcKeyId: 'key_001',
+          encryptedBackupShare: 'enc',
+          userBackupSecret: 'sec',
+        ),
+        throwsA(isA<MpcProtocolException>()),
+      );
+    });
+  });
+}
