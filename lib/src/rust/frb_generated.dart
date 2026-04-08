@@ -90,6 +90,11 @@ abstract class RustLibApi extends BaseApi {
     required String createdAt,
   });
 
+  Future<String> crateApiMpcEngineExportPrivateKey({
+    required String localShare,
+    required String serverSharePrivate,
+  });
+
   String crateApiSimpleGreet({required String name});
 
   Future<void> crateApiSimpleInitApp();
@@ -206,6 +211,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "derive_backup_envelope",
         argNames: ["localEncryptedShare", "userBackupSecret", "createdAt"],
+      );
+
+  @override
+  Future<String> crateApiMpcEngineExportPrivateKey({
+    required String localShare,
+    required String serverSharePrivate,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(localShare, serializer);
+          sse_encode_String(serverSharePrivate, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineExportPrivateKeyConstMeta,
+        argValues: [localShare, serverSharePrivate],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineExportPrivateKeyConstMeta =>
+      const TaskConstMeta(
+        debugName: "export_private_key",
+        argNames: ["localShare", "serverSharePrivate"],
       );
 
   @override

@@ -5,6 +5,25 @@ import '../dto/mpc_dtos.dart';
 import '../transport/mpc_transport.dart';
 import 'mpc_exceptions.dart';
 
+/// MPC protocol endpoint paths.
+///
+/// Used by [MpcClient] to communicate with the MPC server.
+/// If your server uses different routes, implement [MpcTransport]
+/// to map these paths accordingly.
+enum MpcEndpoint {
+  keygenStart('/keygen/start'),
+  keygenContinue('/keygen/continue'),
+  recoveryStart('/recovery/start'),
+  recoveryContinue('/recovery/continue'),
+  signStart('/sign/start'),
+  signContinue('/sign/continue');
+
+  const MpcEndpoint(this.path);
+
+  /// The HTTP path for this endpoint.
+  final String path;
+}
+
 /// High-level MPC orchestration API for host applications.
 ///
 /// Drives keygen/recovery round-trips by coordinating between
@@ -25,7 +44,7 @@ class MpcClient {
   ///    calls Rust keygen_continue until completed
   /// 4. Returns [KeygenResult] with address, publicKey, localEncryptedShare
   Future<KeygenResult> keygen() async {
-    final initResponse = await _sendToServer('/keygen/start', '{}');
+    final initResponse = await _sendToServer(MpcEndpoint.keygenStart.path, '{}');
     final initData = _parseServerResponse(initResponse);
     final sessionId = initData['sessionId'] as String;
 
@@ -38,7 +57,7 @@ class MpcClient {
     var currentResult = round1;
     while (currentResult.isContinue) {
       final serverResponse = await _sendToServer(
-        '/keygen/continue',
+        MpcEndpoint.keygenContinue.path,
         jsonEncode({
           'sessionId': sessionId,
           'round': currentResult.round,
@@ -86,7 +105,7 @@ class MpcClient {
     );
 
     final initResponse = await _sendToServer(
-      '/recovery/start',
+      MpcEndpoint.recoveryStart.path,
       jsonEncode({'mpcKeyId': mpcKeyId}),
     );
     final initData = _parseServerResponse(initResponse);
@@ -103,7 +122,7 @@ class MpcClient {
     var currentResult = round1;
     while (currentResult.isContinue) {
       final serverResponse = await _sendToServer(
-        '/recovery/continue',
+        MpcEndpoint.recoveryContinue.path,
         jsonEncode({
           'sessionId': sessionId,
           'round': currentResult.round,
@@ -168,7 +187,7 @@ class MpcClient {
     required String localEncryptedShare,
   }) async {
     final initResponse = await _sendToServer(
-      '/sign/start',
+      MpcEndpoint.signStart.path,
       jsonEncode({'mpcKeyId': mpcKeyId, 'messageHash': messageHash}),
     );
     final initData = _parseServerResponse(initResponse);
@@ -184,7 +203,7 @@ class MpcClient {
     var currentResult = round1;
     while (currentResult.isContinue) {
       final serverResponse = await _sendToServer(
-        '/sign/continue',
+        MpcEndpoint.signContinue.path,
         jsonEncode({
           'sessionId': sessionId,
           'round': currentResult.round,
@@ -212,6 +231,24 @@ class MpcClient {
 
     throw MpcProtocolException(
         'Unexpected sign state: ${currentResult.status}');
+  }
+
+  /// Export MPC wallet to a standard wallet by reconstructing the full private key.
+  ///
+  /// The server must provide Party1's private share (requires strong authentication).
+  /// After export, the MPC key should be marked as exported and MPC operations disabled.
+  ///
+  /// Returns [ExportResult] with the full private key hex and address.
+  Future<ExportResult> exportPrivateKey({
+    required String localEncryptedShare,
+    required String serverSharePrivate,
+  }) async {
+    final resultJson = await _engine.exportPrivateKey(
+      localEncryptedShare,
+      serverSharePrivate,
+    );
+    final payload = jsonDecode(resultJson) as Map<String, dynamic>;
+    return ExportResult.fromJson(_snakeToCamelKeys(payload));
   }
 
   Future<String> _sendToServer(String endpoint, String payload) async {

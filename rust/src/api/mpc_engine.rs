@@ -458,6 +458,71 @@ pub fn decrypt_backup_share(
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
+// ── Key Export ────────────────────────────────────────────────────────
+
+/// Export full private key by combining Party1 and Party2 secret shares.
+///
+/// In Lindell 2017 two-party ECDSA:
+/// - Party1 holds x1 (FE scalar)
+/// - Party2 holds x2 (FE scalar)
+/// - Group public key Q = x1 * x2 * G
+/// - Full private key = x1 * x2 (mod n)
+///
+/// # Arguments
+/// - local_share: serialized MasterKey2 JSON (contains Party2's private x2)
+/// - server_share_private: serialized Party1Private JSON (server sends this for export)
+///
+/// # Returns
+/// JSON-serialized ExportResult{private_key, address, exported}
+pub fn export_private_key(
+    local_share: String,
+    server_share_private: String,
+) -> Result<String, String> {
+    use curv_kzen::elliptic::curves::secp256_k1::FE;
+    use curv_kzen::elliptic::curves::traits::ECScalar;
+    use crate::api::types::ExportResult;
+
+    // Parse MasterKey2 to get Party2's secret and public key
+    let master_key2: MasterKey2 = serde_json::from_str(&local_share)
+        .map_err(|e| format!("invalid local_share JSON: {e}"))?;
+
+    // Extract x2 from Party2Private via serialization (x2 is a private field)
+    let party2_private_json = serde_json::to_value(&master_key2.private)
+        .map_err(|e| format!("failed to serialize Party2Private: {e}"))?;
+    let x2_value = party2_private_json
+        .get("x2")
+        .ok_or("Party2Private missing x2 field")?;
+    let x2: FE = serde_json::from_value(x2_value.clone())
+        .map_err(|e| format!("failed to deserialize x2: {e}"))?;
+
+    // Extract x1 from server's Party1Private via serialization
+    let party1_private_json: serde_json::Value = serde_json::from_str(&server_share_private)
+        .map_err(|e| format!("invalid server_share_private JSON: {e}"))?;
+    let x1_value = party1_private_json
+        .get("x1")
+        .ok_or("Party1Private missing x1 field")?;
+    let x1: FE = serde_json::from_value(x1_value.clone())
+        .map_err(|e| format!("failed to deserialize x1: {e}"))?;
+
+    // Full private key = x1 * x2 (mod n)
+    let full_private_key: FE = x1 * &x2;
+    let private_key_hex = hex::encode(full_private_key.to_big_int().to_bytes());
+
+    // Pad to 32 bytes (64 hex chars) if needed
+    let private_key_hex = format!("{:0>64}", private_key_hex);
+
+    // Derive address from group public key (already in MasterKey2.public.q)
+    let uncompressed_pubkey = master_key2.public.q.pk_to_key_slice();
+    let address = crate::api::address::derive_evm_address(&uncompressed_pubkey)?;
+
+    let result = ExportResult {
+        private_key: private_key_hex,
+        address,
+        exported: true,
+    };
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -899,6 +964,47 @@ mod tests {
         assert_ne!(
             e1.payload, e2.payload,
             "nonce must be unique per invocation"
+        );
+    }
+
+    #[test]
+    fn test_export_private_key() {
+        // 1. Run full keygen to get both party master keys
+        let (party1_mk, round2_json, _) = run_full_keygen();
+        let round2_result: MpcRoundResult = serde_json::from_str(&round2_json).unwrap();
+        let keygen_payload: KeygenCompletedPayload =
+            serde_json::from_str(round2_result.client_payload.as_ref().unwrap()).unwrap();
+
+        let original_address = keygen_payload.address.clone();
+        let local_share = keygen_payload.local_encrypted_share.clone();
+
+        // 2. Serialize Party1Private (server would send this)
+        let server_share_private =
+            serde_json::to_string(&party1_mk.private).unwrap();
+
+        // 3. Export
+        let export_json =
+            export_private_key(local_share, server_share_private).unwrap();
+        let export_result: crate::api::types::ExportResult =
+            serde_json::from_str(&export_json).unwrap();
+
+        // 4. Verify
+        assert_eq!(export_result.address, original_address);
+        assert!(export_result.exported);
+        assert_eq!(export_result.private_key.len(), 64, "private key must be 32 bytes hex");
+
+        // 5. Verify the private key produces the correct public key / address
+        use curv_kzen::elliptic::curves::secp256_k1::{FE, GE};
+        use curv_kzen::elliptic::curves::traits::{ECPoint, ECScalar};
+        let pk_bytes = hex::decode(&export_result.private_key).unwrap();
+        let sk: FE = ECScalar::from(&curv_kzen::BigInt::from_bytes(&pk_bytes));
+        let pubkey: GE = GE::generator() * &sk;
+        let uncompressed = pubkey.pk_to_key_slice();
+        let derived_address =
+            crate::api::address::derive_evm_address(&uncompressed).unwrap();
+        assert_eq!(
+            derived_address, original_address,
+            "exported private key must derive the same EVM address"
         );
     }
 }

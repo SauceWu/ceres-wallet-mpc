@@ -128,4 +128,16 @@ class MpcEngine {
     return (jsonDecode(result) as Map<String, dynamic>)['device_backup_share']
         as String;
   }
+
+  /// Export full private key by combining Party1 and Party2 shares.
+  Future<String> exportPrivateKey(
+    String localShare,
+    String serverSharePrivate,
+  ) async {
+    final result = await _api.crateApiMpcEngineExportPrivateKey(
+      localShare: localShare,
+      serverSharePrivate: serverSharePrivate,
+    );
+    return result;
+  }
 }

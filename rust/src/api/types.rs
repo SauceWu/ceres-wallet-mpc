@@ -54,3 +54,12 @@ pub struct SignCompletedPayload {
     pub s: String,
     pub recid: u8,
 }
+
+/// Result of exporting MPC wallet to a standard wallet.
+/// Contains the full private key reconstructed from both party shares.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportResult {
+    pub private_key: String,
+    pub address: String,
+    pub exported: bool,
+}
