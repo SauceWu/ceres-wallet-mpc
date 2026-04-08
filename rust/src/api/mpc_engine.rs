@@ -1,10 +1,11 @@
 use crate::api::address::derive_evm_address;
 use crate::api::session::{
-    KeygenSession, RecoverySession, KEYGEN_SESSIONS, RECOVERY_SESSIONS,
+    KeygenSession, RecoverySession, SignSession, KEYGEN_SESSIONS, RECOVERY_SESSIONS,
+    SIGN_SESSIONS,
 };
 use crate::api::types::{
     BackupEnvelope, DecryptBackupResult, KeygenCompletedPayload, MpcRoundResult,
-    RecoveryCompletedPayload,
+    RecoveryCompletedPayload, SignCompletedPayload,
 };
 
 use curv_kzen::elliptic::curves::traits::ECPoint;
@@ -13,7 +14,9 @@ use kms_secp256k1::ecdsa::two_party::party1::KeyGenParty1Message2;
 use kms_secp256k1::ecdsa::two_party::party1::RotationParty1Message1;
 use kms_secp256k1::ecdsa::two_party::MasterKey2;
 use kms_secp256k1::rotation::two_party::party2::Rotation2;
-use multi_party_ecdsa::protocols::two_party_ecdsa::lindell_2017::party_one;
+use curv_kzen::arithmetic::Converter;
+use curv_kzen::BigInt;
+use multi_party_ecdsa::protocols::two_party_ecdsa::lindell_2017::{party_one, party_two};
 use serde::{Deserialize, Serialize};
 use zk_paillier::zkproofs::SALT_STRING;
 
@@ -51,6 +54,17 @@ struct RecoveryRound1ClientPayload {
 struct RecoveryRound2ServerPayload {
     coin_flip_party1_second_message: curv_kzen::cryptographic_primitives::twoparty::coin_flip_optimal_rounds::Party1SecondMessage<curv_kzen::elliptic::curves::secp256_k1::GE>,
     rotation_party1_first_message: RotationParty1Message1,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SignRound1ServerPayload {
+    eph_key_gen_first_message_party_one: party_one::EphKeyGenFirstMsg,
+    message_hash: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SignRound1ClientPayload {
+    eph_key_gen_first_message_party_two: party_two::EphKeyGenFirstMsg,
 }
 
 // ── Keygen ───────────────────────────────────────────────────────────
@@ -268,36 +282,92 @@ pub fn recover_continue(session_id: String, server_payload: String) -> Result<St
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
-// ── Sign (stubs — Phase 4 scope) ────────────────────────────────────
+// ── Sign ─────────────────────────────────────────────────────────────
 
-/// Sign round 1: receive share + server payload, return client payload.
+/// Sign round 1: deserialize MasterKey2 from share, generate Party2 ephemeral,
+/// store session state, return Party2 ephemeral first message.
 pub fn sign_start(
     session_id: String,
     share: String,
     server_payload: String,
 ) -> Result<String, String> {
-    let _ = serde_json::from_str::<serde_json::Value>(&server_payload)
+    let server: SignRound1ServerPayload = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server_payload JSON: {e}"))?;
-    let _ = &share;
+
+    // Validate messageHash is 32 bytes hex
+    let msg_bytes = hex::decode(&server.message_hash)
+        .map_err(|e| format!("invalid message_hash hex: {e}"))?;
+    if msg_bytes.len() != 32 {
+        return Err(format!(
+            "message_hash must be 32 bytes, got {}",
+            msg_bytes.len()
+        ));
+    }
+
+    // Deserialize share → MasterKey2
+    let master_key: MasterKey2 = serde_json::from_str(&share)
+        .map_err(|e| format!("invalid share JSON: {e}"))?;
+
+    // Party2 round 1: generate ephemeral key pair
+    let (eph_key_gen_first_message_party_two, eph_comm_witness, eph_ec_key_pair) =
+        MasterKey2::sign_first_message();
+
+    // Store session (including Party1 ephemeral first message + messageHash)
+    SIGN_SESSIONS.lock().unwrap().insert(
+        session_id.clone(),
+        SignSession {
+            master_key,
+            eph_ec_key_pair,
+            eph_comm_witness,
+            eph_party1_first_message: server.eph_key_gen_first_message_party_one,
+            message_hash: server.message_hash,
+        },
+    );
+
+    let client_payload = SignRound1ClientPayload {
+        eph_key_gen_first_message_party_two,
+    };
 
     let result = MpcRoundResult {
         status: "continue".to_string(),
         round: 1,
-        client_payload: Some(format!("stub_sign_round1_{session_id}")),
+        client_payload: Some(
+            serde_json::to_string(&client_payload).map_err(|e| e.to_string())?,
+        ),
         error_message: None,
     };
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
-/// Sign subsequent rounds.
+/// Sign round 2: retrieve session, compute Party2 partial sig (SignMessage).
+/// Returns SignMessage JSON as client_payload — server uses this to complete signing.
 pub fn sign_continue(session_id: String, server_payload: String) -> Result<String, String> {
     let _ = serde_json::from_str::<serde_json::Value>(&server_payload)
         .map_err(|e| format!("invalid server_payload JSON: {e}"))?;
 
+    let session = crate::api::session::remove_sign_session(&session_id)
+        .ok_or_else(|| format!("session not found: {session_id}"))?;
+
+    // Reconstruct message BigInt from stored hex
+    let msg_bytes = hex::decode(&session.message_hash)
+        .map_err(|e| format!("invalid stored message_hash: {e}"))?;
+    let message = BigInt::from_bytes(&msg_bytes);
+
+    // Party2 round 2: compute partial sig (eph_comm_witness moved by value)
+    let sign_party_two_second_message = session.master_key.sign_second_message(
+        &session.eph_ec_key_pair,
+        session.eph_comm_witness,
+        &session.eph_party1_first_message,
+        &message,
+    );
+
+    let client_payload_str = serde_json::to_string(&sign_party_two_second_message)
+        .map_err(|e| e.to_string())?;
+
     let result = MpcRoundResult {
         status: "completed".to_string(),
         round: 2,
-        client_payload: Some(format!("stub_sign_completed_{session_id}")),
+        client_payload: Some(client_payload_str),
         error_message: None,
     };
     serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -563,23 +633,145 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_stubs_preserved() {
-        let sign_start_result =
-            sign_start("s1".into(), "sh".into(), VALID_PAYLOAD.into()).unwrap();
-        let parsed: MpcRoundResult = serde_json::from_str(&sign_start_result).unwrap();
-        let payload = parsed.client_payload.unwrap();
+    fn test_sign_full_protocol() {
+        // 1. Keygen to get MasterKey1 + MasterKey2
+        let (party1_mk, round2_json, _) = run_full_keygen();
+        let round2_result: MpcRoundResult = serde_json::from_str(&round2_json).unwrap();
+        let keygen_payload: KeygenCompletedPayload =
+            serde_json::from_str(round2_result.client_payload.as_ref().unwrap()).unwrap();
+        let live_share = keygen_payload.local_encrypted_share.clone();
+
+        // 2. Fixed 32 bytes message hash
+        let message_hash_hex = "a".repeat(64);
+        let msg_bytes = hex::decode(&message_hash_hex).unwrap();
+        let message = BigInt::from_bytes(&msg_bytes);
+
+        let session_id = unique_session_id("sign");
+
+        // 3. Party1 (server) round 1
+        let (eph_key_gen_first_message_party_one, eph_ec_key_pair_party1) =
+            MasterKey1::sign_first_message();
+
+        let server_round1 = serde_json::to_string(&SignRound1ServerPayload {
+            eph_key_gen_first_message_party_one,
+            message_hash: message_hash_hex.clone(),
+        })
+        .unwrap();
+
+        // 4. Party2 round 1
+        let r1_json = sign_start(session_id.clone(), live_share, server_round1).unwrap();
+        let r1: MpcRoundResult = serde_json::from_str(&r1_json).unwrap();
+        assert_eq!(r1.status, "continue");
+        assert_eq!(r1.round, 1);
+
+        let client_round1: SignRound1ClientPayload =
+            serde_json::from_str(r1.client_payload.as_ref().unwrap()).unwrap();
+
+        // 5. Party2 round 2
+        let r2_json = sign_continue(session_id, "{}".to_string()).unwrap();
+        let r2: MpcRoundResult = serde_json::from_str(&r2_json).unwrap();
+        assert_eq!(r2.status, "completed");
+        assert_eq!(r2.round, 2);
+
+        // 6. Party1 (server) completes signing with Party2's SignMessage
+        let sign_message: kms_secp256k1::ecdsa::two_party::party2::SignMessage =
+            serde_json::from_str(r2.client_payload.as_ref().unwrap()).unwrap();
+        let signature = party1_mk
+            .sign_second_message(
+                &sign_message,
+                &client_round1.eph_key_gen_first_message_party_two,
+                &eph_ec_key_pair_party1,
+                &message,
+            )
+            .expect("party1 sign_second_message failed");
+
+        assert!(!signature.r.to_hex().is_empty());
+        assert!(!signature.s.to_hex().is_empty());
+    }
+
+    #[test]
+    fn test_sign_produces_valid_evm_signature() {
+        // 1. Keygen to get keys + EVM address
+        let (party1_mk, round2_json, _) = run_full_keygen();
+        let round2_result: MpcRoundResult = serde_json::from_str(&round2_json).unwrap();
+        let keygen_payload: KeygenCompletedPayload =
+            serde_json::from_str(round2_result.client_payload.as_ref().unwrap()).unwrap();
+        let live_share = keygen_payload.local_encrypted_share.clone();
+        let original_address = keygen_payload.address.clone();
+
+        // 2. Sign a message
+        let message_hash_hex =
+            "b9f5c013e33b1b0eb9f5c013e33b1b0eb9f5c013e33b1b0eb9f5c013e33b1b0e";
+        let msg_bytes = hex::decode(message_hash_hex).unwrap();
+        let message = BigInt::from_bytes(&msg_bytes);
+
+        let session_id = unique_session_id("evm_sig");
+        let (eph_p1_first, eph_ec_key_pair_p1) = MasterKey1::sign_first_message();
+
+        let server_round1 = serde_json::to_string(&SignRound1ServerPayload {
+            eph_key_gen_first_message_party_one: eph_p1_first,
+            message_hash: message_hash_hex.to_string(),
+        })
+        .unwrap();
+
+        let r1_json = sign_start(session_id.clone(), live_share, server_round1).unwrap();
+        let r1: MpcRoundResult = serde_json::from_str(&r1_json).unwrap();
+        let client_round1: SignRound1ClientPayload =
+            serde_json::from_str(r1.client_payload.as_ref().unwrap()).unwrap();
+
+        let r2_json = sign_continue(session_id, "{}".to_string()).unwrap();
+        let r2: MpcRoundResult = serde_json::from_str(&r2_json).unwrap();
+
+        // 3. Party1 completes signing
+        let sign_message: kms_secp256k1::ecdsa::two_party::party2::SignMessage =
+            serde_json::from_str(r2.client_payload.as_ref().unwrap()).unwrap();
+        let signature = party1_mk
+            .sign_second_message(
+                &sign_message,
+                &client_round1.eph_key_gen_first_message_party_two,
+                &eph_ec_key_pair_p1,
+                &message,
+            )
+            .expect("signing failed");
+
+        // 4. Verify signature components
+        assert!(!signature.r.to_hex().is_empty(), "r must not be empty");
+        assert!(!signature.s.to_hex().is_empty(), "s must not be empty");
         assert!(
-            payload.starts_with("stub_sign"),
-            "sign_start must still be a stub"
+            signature.recid <= 1,
+            "recid must be 0 or 1, got {}",
+            signature.recid
         );
 
-        let sign_continue_result =
-            sign_continue("s1".into(), VALID_PAYLOAD.into()).unwrap();
-        let parsed: MpcRoundResult = serde_json::from_str(&sign_continue_result).unwrap();
-        let payload = parsed.client_payload.unwrap();
+        // 5. The fact that party1.sign_second_message succeeded means the signature
+        // is valid for the group public key which maps to original_address
+        assert!(original_address.starts_with("0x"));
+        assert_eq!(original_address.len(), 42);
+    }
+
+    #[test]
+    fn test_sign_invalid_message_hash() {
+        let (_, round2_json, _) = run_full_keygen();
+        let round2_result: MpcRoundResult = serde_json::from_str(&round2_json).unwrap();
+        let keygen_payload: KeygenCompletedPayload =
+            serde_json::from_str(round2_result.client_payload.as_ref().unwrap()).unwrap();
+        let live_share = keygen_payload.local_encrypted_share;
+
+        // 31 bytes (62 hex chars) — should fail
+        let bad_hash = "aa".repeat(31);
+        let (eph_p1_first, _) = MasterKey1::sign_first_message();
+        let bad_server = serde_json::to_string(&SignRound1ServerPayload {
+            eph_key_gen_first_message_party_one: eph_p1_first,
+            message_hash: bad_hash,
+        })
+        .unwrap();
+
+        let result = sign_start("s_bad".into(), live_share, bad_server);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
         assert!(
-            payload.starts_with("stub_sign"),
-            "sign_continue must still be a stub"
+            err.contains("32 bytes"),
+            "expected 32 bytes error, got: {err}"
         );
     }
 
