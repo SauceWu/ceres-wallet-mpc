@@ -3,613 +3,499 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/address.dart';
 import 'api/mpc_engine.dart';
 import 'api/simple.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
-import 'frb_generated.io.dart'
-    if (dart.library.js_interop) 'frb_generated.web.dart';
+import 'frb_generated.io.dart' if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-/// Main entrypoint of the Rust API
-class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
-  @internal
-  static final instance = RustLib._();
 
-  RustLib._();
+                /// Main entrypoint of the Rust API
+                class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
+                  @internal
+                  static final instance = RustLib._();
 
-  /// Initialize flutter_rust_bridge
-  static Future<void> init({
-    RustLibApi? api,
-    BaseHandler? handler,
-    ExternalLibrary? externalLibrary,
-    bool forceSameCodegenVersion = true,
-  }) async {
-    await instance.initImpl(
-      api: api,
-      handler: handler,
-      externalLibrary: externalLibrary,
-      forceSameCodegenVersion: forceSameCodegenVersion,
-    );
-  }
+                  RustLib._();
 
-  /// Initialize flutter_rust_bridge in mock mode.
-  /// No libraries for FFI are loaded.
-  static void initMock({required RustLibApi api}) {
-    instance.initMockImpl(api: api);
-  }
+                  /// Initialize flutter_rust_bridge
+                  static Future<void> init({
+                    RustLibApi? api,
+                    BaseHandler? handler,
+                    ExternalLibrary? externalLibrary,
+                    bool forceSameCodegenVersion = true,
+                  }) async {
+                    await instance.initImpl(
+                      api: api,
+                      handler: handler,
+                      externalLibrary: externalLibrary,
+                      forceSameCodegenVersion: forceSameCodegenVersion,
+                    );
+                  }
 
-  /// Dispose flutter_rust_bridge
-  ///
-  /// The call to this function is optional, since flutter_rust_bridge (and everything else)
-  /// is automatically disposed when the app stops.
-  static void dispose() => instance.disposeImpl();
+                  /// Initialize flutter_rust_bridge in mock mode.
+                  /// No libraries for FFI are loaded.
+                  static void initMock({
+                    required RustLibApi api,
+                  }) {
+                    instance.initMockImpl(
+                      api: api,
+                    );
+                  }
 
-  @override
-  ApiImplConstructor<RustLibApiImpl, RustLibWire> get apiImplConstructor =>
-      RustLibApiImpl.new;
+                  /// Dispose flutter_rust_bridge
+                  ///
+                  /// The call to this function is optional, since flutter_rust_bridge (and everything else)
+                  /// is automatically disposed when the app stops.
+                  static void dispose() => instance.disposeImpl();
 
-  @override
-  WireConstructor<RustLibWire> get wireConstructor =>
-      RustLibWire.fromExternalLibrary;
+                  @override
+                  ApiImplConstructor<RustLibApiImpl, RustLibWire> get apiImplConstructor => RustLibApiImpl.new;
 
-  @override
-  Future<void> executeRustInitializers() async {
-    await api.crateApiSimpleInitApp();
-  }
+                  @override
+                  WireConstructor<RustLibWire> get wireConstructor => RustLibWire.fromExternalLibrary;
 
-  @override
-  ExternalLibraryLoaderConfig get defaultExternalLibraryLoaderConfig =>
-      kDefaultExternalLibraryLoaderConfig;
+                  @override
+                  Future<void> executeRustInitializers() async {
+                    await api.crateApiSimpleInitApp();
 
-  @override
-  String get codegenVersion => '2.12.0';
+                  }
 
-  @override
-  int get rustContentHash => -1067866917;
+                  @override
+                  ExternalLibraryLoaderConfig get defaultExternalLibraryLoaderConfig => kDefaultExternalLibraryLoaderConfig;
 
-  static const kDefaultExternalLibraryLoaderConfig =
-      ExternalLibraryLoaderConfig(
-        stem: 'ceres_mpc',
-        ioDirectory: 'rust/target/release/',
-        webPrefix: 'pkg/',
-        wasmBindgenName: 'wasm_bindgen',
-      );
-}
+                  @override
+                  String get codegenVersion => '2.12.0';
 
-abstract class RustLibApi extends BaseApi {
-  Future<String> crateApiMpcEngineDecryptBackupShare({
-    required String encryptedEnvelope,
-    required String userBackupSecret,
-  });
+                  @override
+                  int get rustContentHash => -1449156039;
 
-  Future<String> crateApiMpcEngineDeriveBackupEnvelope({
-    required String localEncryptedShare,
-    required String userBackupSecret,
-    required String createdAt,
-  });
+                  static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
+                    stem: 'ceres_mpc',
+                    ioDirectory: 'rust/target/release/',
+                    webPrefix: 'pkg/',
+                    wasmBindgenName: 'wasm_bindgen',
+                  );
+                }
+                
 
-  Future<String> crateApiMpcEngineExportPrivateKey({
-    required String localShare,
-    required String serverSharePrivate,
-  });
+                abstract class RustLibApi extends BaseApi {
+                  Future<String> crateApiMpcEngineDecryptBackupShare({required String encryptedEnvelope , required String userBackupSecret });
 
-  String crateApiSimpleGreet({required String name});
+Future<String> crateApiMpcEngineDeriveBackupEnvelope({required String localEncryptedShare , required String userBackupSecret , required String createdAt });
 
-  Future<void> crateApiSimpleInitApp();
+Future<String> crateApiAddressDeriveEvmAddress({required List<int> uncompressedPubkey });
 
-  Future<String> crateApiMpcEngineKeygenContinue({
-    required String sessionId,
-    required String serverPayload,
-  });
+Future<String> crateApiMpcEngineExportPrivateKey({required String localShare , required String serverSharePrivate });
 
-  Future<String> crateApiMpcEngineKeygenStart({
-    required String sessionId,
-    required String serverPayload,
-  });
+String crateApiSimpleGreet({required String name });
 
-  Future<String> crateApiMpcEngineRecoverContinue({
-    required String sessionId,
-    required String serverPayload,
-  });
+Future<void> crateApiSimpleInitApp();
 
-  Future<String> crateApiMpcEngineRecoverStart({
-    required String sessionId,
-    required String backupShare,
-    required String serverPayload,
-    required int currentRotationVersion,
-  });
+Future<String> crateApiMpcEngineKeygenContinue({required String sessionId , required String serverPayload });
 
-  Future<String> crateApiMpcEngineSignContinue({
-    required String sessionId,
-    required String serverPayload,
-  });
+Future<String> crateApiMpcEngineKeygenStart({required String sessionId , required String serverPayload });
 
-  Future<String> crateApiMpcEngineSignStart({
-    required String sessionId,
-    required String share,
-    required String serverPayload,
-  });
-}
+Future<String> crateApiMpcEngineRecoverContinue({required String sessionId , required String serverPayload });
 
-class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
-  RustLibApiImpl({
-    required super.handler,
-    required super.wire,
-    required super.generalizedFrbRustBinding,
-    required super.portManager,
-  });
+Future<String> crateApiMpcEngineRecoverStart({required String sessionId , required String backupShare , required String serverPayload , required int currentRotationVersion });
 
-  @override
-  Future<String> crateApiMpcEngineDecryptBackupShare({
-    required String encryptedEnvelope,
-    required String userBackupSecret,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(encryptedEnvelope, serializer);
-          sse_encode_String(userBackupSecret, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 1,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+Future<String> crateApiMpcEngineSignContinue({required String sessionId , required String serverPayload });
+
+Future<String> crateApiMpcEngineSignStart({required String sessionId , required String share , required String serverPayload });
+
+
+                }
+                
+
+                class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
+                  RustLibApiImpl({
+                    required super.handler,
+                    required super.wire,
+                    required super.generalizedFrbRustBinding,
+                    required super.portManager,
+                  });
+
+                  @override Future<String> crateApiMpcEngineDecryptBackupShare({required String encryptedEnvelope , required String userBackupSecret })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(encryptedEnvelope, serializer);
+sse_encode_String(userBackupSecret, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineDecryptBackupShareConstMeta,
-        argValues: [encryptedEnvelope, userBackupSecret],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineDecryptBackupShareConstMeta,
+            argValues: [encryptedEnvelope, userBackupSecret],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineDecryptBackupShareConstMeta =>
-      const TaskConstMeta(
-        debugName: "decrypt_backup_share",
-        argNames: ["encryptedEnvelope", "userBackupSecret"],
-      );
 
-  @override
-  Future<String> crateApiMpcEngineDeriveBackupEnvelope({
-    required String localEncryptedShare,
-    required String userBackupSecret,
-    required String createdAt,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(localEncryptedShare, serializer);
-          sse_encode_String(userBackupSecret, serializer);
-          sse_encode_String(createdAt, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 2,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiMpcEngineDecryptBackupShareConstMeta => const TaskConstMeta(
+            debugName: "decrypt_backup_share",
+            argNames: ["encryptedEnvelope", "userBackupSecret"],
+        );
+        
+
+@override Future<String> crateApiMpcEngineDeriveBackupEnvelope({required String localEncryptedShare , required String userBackupSecret , required String createdAt })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(localEncryptedShare, serializer);
+sse_encode_String(userBackupSecret, serializer);
+sse_encode_String(createdAt, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineDeriveBackupEnvelopeConstMeta,
-        argValues: [localEncryptedShare, userBackupSecret, createdAt],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineDeriveBackupEnvelopeConstMeta,
+            argValues: [localEncryptedShare, userBackupSecret, createdAt],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineDeriveBackupEnvelopeConstMeta =>
-      const TaskConstMeta(
-        debugName: "derive_backup_envelope",
-        argNames: ["localEncryptedShare", "userBackupSecret", "createdAt"],
-      );
 
-  @override
-  Future<String> crateApiMpcEngineExportPrivateKey({
-    required String localShare,
-    required String serverSharePrivate,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(localShare, serializer);
-          sse_encode_String(serverSharePrivate, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 12,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiMpcEngineDeriveBackupEnvelopeConstMeta => const TaskConstMeta(
+            debugName: "derive_backup_envelope",
+            argNames: ["localEncryptedShare", "userBackupSecret", "createdAt"],
+        );
+        
+
+@override Future<String> crateApiAddressDeriveEvmAddress({required List<int> uncompressedPubkey })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_list_prim_u_8_loose(uncompressedPubkey, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineExportPrivateKeyConstMeta,
-        argValues: [localShare, serverSharePrivate],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiAddressDeriveEvmAddressConstMeta,
+            argValues: [uncompressedPubkey],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineExportPrivateKeyConstMeta =>
-      const TaskConstMeta(
-        debugName: "export_private_key",
-        argNames: ["localShare", "serverSharePrivate"],
-      );
 
-  @override
-  String crateApiSimpleGreet({required String name}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiAddressDeriveEvmAddressConstMeta => const TaskConstMeta(
+            debugName: "derive_evm_address",
+            argNames: ["uncompressedPubkey"],
+        );
+        
+
+@override Future<String> crateApiMpcEngineExportPrivateKey({required String localShare , required String serverSharePrivate })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(localShare, serializer);
+sse_encode_String(serverSharePrivate, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        )
+        ,
+            constMeta: kCrateApiMpcEngineExportPrivateKeyConstMeta,
+            argValues: [localShare, serverSharePrivate],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiMpcEngineExportPrivateKeyConstMeta => const TaskConstMeta(
+            debugName: "export_private_key",
+            argNames: ["localShare", "serverSharePrivate"],
+        );
+        
+
+@override String crateApiSimpleGreet({required String name })  { return handler.executeSync(SyncTask(
+            callFfi: () {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(name, serializer);
+            return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: null,
-        ),
-        constMeta: kCrateApiSimpleGreetConstMeta,
-        argValues: [name],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiSimpleGreetConstMeta,
+            argValues: [name],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiSimpleGreetConstMeta =>
-      const TaskConstMeta(debugName: "greet", argNames: ["name"]);
 
-  @override
-  Future<void> crateApiSimpleInitApp() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 4,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiSimpleGreetConstMeta => const TaskConstMeta(
+            debugName: "greet",
+            argNames: ["name"],
+        );
+        
+
+@override Future<void> crateApiSimpleInitApp()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: null,
-        ),
-        constMeta: kCrateApiSimpleInitAppConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiSimpleInitAppConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiSimpleInitAppConstMeta =>
-      const TaskConstMeta(debugName: "init_app", argNames: []);
 
-  @override
-  Future<String> crateApiMpcEngineKeygenContinue({
-    required String sessionId,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 5,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiSimpleInitAppConstMeta => const TaskConstMeta(
+            debugName: "init_app",
+            argNames: [],
+        );
+        
+
+@override Future<String> crateApiMpcEngineKeygenContinue({required String sessionId , required String serverPayload })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(sessionId, serializer);
+sse_encode_String(serverPayload, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineKeygenContinueConstMeta,
-        argValues: [sessionId, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineKeygenContinueConstMeta,
+            argValues: [sessionId, serverPayload],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineKeygenContinueConstMeta =>
-      const TaskConstMeta(
-        debugName: "keygen_continue",
-        argNames: ["sessionId", "serverPayload"],
-      );
 
-  @override
-  Future<String> crateApiMpcEngineKeygenStart({
-    required String sessionId,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 6,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiMpcEngineKeygenContinueConstMeta => const TaskConstMeta(
+            debugName: "keygen_continue",
+            argNames: ["sessionId", "serverPayload"],
+        );
+        
+
+@override Future<String> crateApiMpcEngineKeygenStart({required String sessionId , required String serverPayload })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(sessionId, serializer);
+sse_encode_String(serverPayload, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineKeygenStartConstMeta,
-        argValues: [sessionId, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineKeygenStartConstMeta,
+            argValues: [sessionId, serverPayload],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineKeygenStartConstMeta =>
-      const TaskConstMeta(
-        debugName: "keygen_start",
-        argNames: ["sessionId", "serverPayload"],
-      );
 
-  @override
-  Future<String> crateApiMpcEngineRecoverContinue({
-    required String sessionId,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 7,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiMpcEngineKeygenStartConstMeta => const TaskConstMeta(
+            debugName: "keygen_start",
+            argNames: ["sessionId", "serverPayload"],
+        );
+        
+
+@override Future<String> crateApiMpcEngineRecoverContinue({required String sessionId , required String serverPayload })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(sessionId, serializer);
+sse_encode_String(serverPayload, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineRecoverContinueConstMeta,
-        argValues: [sessionId, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineRecoverContinueConstMeta,
+            argValues: [sessionId, serverPayload],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineRecoverContinueConstMeta =>
-      const TaskConstMeta(
-        debugName: "recover_continue",
-        argNames: ["sessionId", "serverPayload"],
-      );
 
-  @override
-  Future<String> crateApiMpcEngineRecoverStart({
-    required String sessionId,
-    required String backupShare,
-    required String serverPayload,
-    required int currentRotationVersion,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(backupShare, serializer);
-          sse_encode_String(serverPayload, serializer);
-          sse_encode_i_32(currentRotationVersion, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 8,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiMpcEngineRecoverContinueConstMeta => const TaskConstMeta(
+            debugName: "recover_continue",
+            argNames: ["sessionId", "serverPayload"],
+        );
+        
+
+@override Future<String> crateApiMpcEngineRecoverStart({required String sessionId , required String backupShare , required String serverPayload , required int currentRotationVersion })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(sessionId, serializer);
+sse_encode_String(backupShare, serializer);
+sse_encode_String(serverPayload, serializer);
+sse_encode_i_32(currentRotationVersion, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineRecoverStartConstMeta,
-        argValues: [sessionId, backupShare, serverPayload, currentRotationVersion],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineRecoverStartConstMeta,
+            argValues: [sessionId, backupShare, serverPayload, currentRotationVersion],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineRecoverStartConstMeta =>
-      const TaskConstMeta(
-        debugName: "recover_start",
-        argNames: ["sessionId", "backupShare", "serverPayload", "currentRotationVersion"],
-      );
 
-  @override
-  Future<String> crateApiMpcEngineSignContinue({
-    required String sessionId,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 9,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiMpcEngineRecoverStartConstMeta => const TaskConstMeta(
+            debugName: "recover_start",
+            argNames: ["sessionId", "backupShare", "serverPayload", "currentRotationVersion"],
+        );
+        
+
+@override Future<String> crateApiMpcEngineSignContinue({required String sessionId , required String serverPayload })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(sessionId, serializer);
+sse_encode_String(serverPayload, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineSignContinueConstMeta,
-        argValues: [sessionId, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineSignContinueConstMeta,
+            argValues: [sessionId, serverPayload],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineSignContinueConstMeta =>
-      const TaskConstMeta(
-        debugName: "sign_continue",
-        argNames: ["sessionId", "serverPayload"],
-      );
 
-  @override
-  Future<String> crateApiMpcEngineSignStart({
-    required String sessionId,
-    required String share,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(share, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 10,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
+        TaskConstMeta get kCrateApiMpcEngineSignContinueConstMeta => const TaskConstMeta(
+            debugName: "sign_continue",
+            argNames: ["sessionId", "serverPayload"],
+        );
+        
+
+@override Future<String> crateApiMpcEngineSignStart({required String sessionId , required String share , required String serverPayload })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(sessionId, serializer);
+sse_encode_String(share, serializer);
+sse_encode_String(serverPayload, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineSignStartConstMeta,
-        argValues: [sessionId, share, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
+        )
+        ,
+            constMeta: kCrateApiMpcEngineSignStartConstMeta,
+            argValues: [sessionId, share, serverPayload],
+            apiImpl: this,
+        )); }
 
-  TaskConstMeta get kCrateApiMpcEngineSignStartConstMeta => const TaskConstMeta(
-    debugName: "sign_start",
-    argNames: ["sessionId", "share", "serverPayload"],
-  );
 
-  @protected
-  String dco_decode_String(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw as String;
-  }
+        TaskConstMeta get kCrateApiMpcEngineSignStartConstMeta => const TaskConstMeta(
+            debugName: "sign_start",
+            argNames: ["sessionId", "share", "serverPayload"],
+        );
+        
 
-  @protected
-  Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw as Uint8List;
-  }
 
-  @protected
-  int dco_decode_u_8(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw as int;
-  }
 
-  @protected
-  void dco_decode_unit(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return;
-  }
+                  @protected String dco_decode_String(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw as String; }
 
-  @protected
-  String sse_decode_String(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_list_prim_u_8_strict(deserializer);
-    return utf8.decoder.convert(inner);
-  }
+@protected int dco_decode_i_32(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw as int; }
 
-  @protected
-  Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var len_ = sse_decode_i_32(deserializer);
-    return deserializer.buffer.getUint8List(len_);
-  }
+@protected List<int> dco_decode_list_prim_u_8_loose(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw as List<int>; }
 
-  @protected
-  int sse_decode_u_8(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getUint8();
-  }
+@protected Uint8List dco_decode_list_prim_u_8_strict(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw as Uint8List; }
 
-  @protected
-  void sse_decode_unit(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-  }
+@protected int dco_decode_u_8(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw as int; }
 
-  @protected
-  int sse_decode_i_32(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getInt32();
-  }
+@protected void dco_decode_unit(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return; }
 
-  @protected
-  bool sse_decode_bool(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getUint8() != 0;
-  }
+@protected String sse_decode_String(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_list_prim_u_8_strict(deserializer);
+        return utf8.decoder.convert(inner); }
 
-  @protected
-  void sse_encode_String(String self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
-  }
+@protected int sse_decode_i_32(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return deserializer.buffer.getInt32(); }
 
-  @protected
-  void sse_encode_list_prim_u_8_strict(
-    Uint8List self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    serializer.buffer.putUint8List(self);
-  }
+@protected List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var len_ = sse_decode_i_32(deserializer);
+                return deserializer.buffer.getUint8List(len_); }
 
-  @protected
-  void sse_encode_u_8(int self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putUint8(self);
-  }
+@protected Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var len_ = sse_decode_i_32(deserializer);
+                return deserializer.buffer.getUint8List(len_); }
 
-  @protected
-  void sse_encode_unit(void self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-  }
+@protected int sse_decode_u_8(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return deserializer.buffer.getUint8(); }
 
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putInt32(self);
-  }
+@protected void sse_decode_unit(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+ }
 
-  @protected
-  void sse_encode_bool(bool self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putUint8(self ? 1 : 0);
-  }
-}
+@protected bool sse_decode_bool(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return deserializer.buffer.getUint8() != 0; }
+
+@protected void sse_encode_String(String self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer); }
+
+@protected void sse_encode_i_32(int self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+serializer.buffer.putInt32(self); }
+
+@protected void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+                    serializer.buffer.putUint8List(self is Uint8List ? self : Uint8List.fromList(self)); }
+
+@protected void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+                    serializer.buffer.putUint8List(self); }
+
+@protected void sse_encode_u_8(int self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+serializer.buffer.putUint8(self); }
+
+@protected void sse_encode_unit(void self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+ }
+
+@protected void sse_encode_bool(bool self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+serializer.buffer.putUint8(self ? 1 : 0); }
+                }
+                

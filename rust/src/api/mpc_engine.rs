@@ -1,5 +1,5 @@
 use crate::api::address::derive_evm_address;
-use crate::api::session::{
+use crate::session::{
     KeygenSession, RecoverySession, SignSession, KEYGEN_SESSIONS, RECOVERY_SESSIONS,
     SIGN_SESSIONS,
 };
@@ -125,7 +125,7 @@ pub fn keygen_continue(session_id: String, server_payload: String) -> Result<Str
         .map_err(|e| format!("invalid server_payload JSON: {e}"))?;
 
     // Retrieve session
-    let session = crate::api::session::remove_keygen_session(&session_id)
+    let session = crate::session::remove_keygen_session(&session_id)
         .ok_or_else(|| format!("session not found: {session_id}"))?;
 
     // Party2 keygen second message — verify commitments and DLog proof
@@ -248,7 +248,7 @@ pub fn recover_continue(session_id: String, server_payload: String) -> Result<St
         .map_err(|e| format!("invalid server_payload JSON: {e}"))?;
 
     // Retrieve session
-    let session = crate::api::session::remove_recovery_session(&session_id)
+    let session = crate::session::remove_recovery_session(&session_id)
         .ok_or_else(|| format!("session not found: {session_id}"))?;
 
     // Complete coin-flip to get Rotation
@@ -353,7 +353,7 @@ pub fn sign_continue(session_id: String, server_payload: String) -> Result<Strin
     let _ = serde_json::from_str::<serde_json::Value>(&server_payload)
         .map_err(|e| format!("invalid server_payload JSON: {e}"))?;
 
-    let session = crate::api::session::remove_sign_session(&session_id)
+    let session = crate::session::remove_sign_session(&session_id)
         .ok_or_else(|| format!("session not found: {session_id}"))?;
 
     // Reconstruct message BigInt from stored hex
