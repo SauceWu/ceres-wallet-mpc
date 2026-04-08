@@ -45,3 +45,12 @@ pub struct RecoveryCompletedPayload {
     pub rotation_version: i32,
     pub local_encrypted_share: String,
 }
+
+/// Payload returned when sign completes (status: "completed").
+/// Per D-02: r, s, recid — caller assembles signedTx.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignCompletedPayload {
+    pub r: String,
+    pub s: String,
+    pub recid: u8,
+}

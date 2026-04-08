@@ -42,3 +42,21 @@ pub fn remove_keygen_session(session_id: &str) -> Option<KeygenSession> {
 pub fn remove_recovery_session(session_id: &str) -> Option<RecoverySession> {
     RECOVERY_SESSIONS.lock().unwrap().remove(session_id)
 }
+
+/// Sign session state persisted between rounds.
+/// Holds Party2 ephemeral key state from round 1, plus Party1's ephemeral
+/// first message (received from server in round 1) needed for sign_second_message.
+pub struct SignSession {
+    pub master_key: MasterKey2,
+    pub eph_ec_key_pair: party_two::EphEcKeyPair,
+    pub eph_comm_witness: party_two::EphCommWitness,
+    pub eph_party1_first_message: party_one::EphKeyGenFirstMsg,
+    pub message_hash: String,
+}
+
+pub static SIGN_SESSIONS: Lazy<Mutex<HashMap<String, SignSession>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+pub fn remove_sign_session(session_id: &str) -> Option<SignSession> {
+    SIGN_SESSIONS.lock().unwrap().remove(session_id)
+}
