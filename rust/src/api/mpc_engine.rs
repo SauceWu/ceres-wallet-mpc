@@ -14,10 +14,16 @@ use kms_secp256k1::ecdsa::two_party::party1::KeyGenParty1Message2;
 use kms_secp256k1::ecdsa::two_party::party1::RotationParty1Message1;
 use kms_secp256k1::ecdsa::two_party::MasterKey2;
 use kms_secp256k1::rotation::two_party::party2::Rotation2;
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+    Aes256Gcm, Key, Nonce,
+};
 use curv_kzen::arithmetic::Converter;
 use curv_kzen::BigInt;
+use hkdf::Hkdf;
 use multi_party_ecdsa::protocols::two_party_ecdsa::lindell_2017::{party_one, party_two};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use zk_paillier::zkproofs::SALT_STRING;
 
 // ── Server payload types (JSON wire format) ──────────────────────────
@@ -197,6 +203,7 @@ pub fn recover_start(
     session_id: String,
     backup_share: String,
     server_payload: String,
+    current_rotation_version: i32,
 ) -> Result<String, String> {
     let server: RecoveryRound1ServerPayload = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server_payload JSON: {e}"))?;
@@ -216,6 +223,7 @@ pub fn recover_start(
             master_key,
             coin_flip_party1_first_message: server.coin_flip_party1_first_message,
             coin_flip_party2_first_message: coin_flip_party2_first_message.clone(),
+            rotation_version: current_rotation_version,
         },
     );
 
@@ -269,7 +277,7 @@ pub fn recover_continue(session_id: String, server_payload: String) -> Result<St
         mpc_key_id: session_id,
         address,
         public_key: public_key_hex,
-        rotation_version: 2, // incremented from 1
+        rotation_version: session.rotation_version + 1,
         local_encrypted_share,
     };
 
@@ -373,31 +381,79 @@ pub fn sign_continue(session_id: String, server_payload: String) -> Result<Strin
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
+// ── Backup helpers ───────────────────────────────────────────────────
+
+/// Derive 32-byte AES-256 key from userBackupSecret via HKDF-SHA256.
+fn derive_aes_key(user_backup_secret: &str) -> [u8; 32] {
+    let hk = Hkdf::<Sha256>::new(None, user_backup_secret.as_bytes());
+    let mut key = [0u8; 32];
+    hk.expand(b"ceres-mpc-backup-v1", &mut key)
+        .expect("32 bytes is valid HKDF-SHA256 output length");
+    key
+}
+
+/// Encrypt plaintext, return hex(nonce_12bytes || ciphertext_with_tag).
+fn encrypt_share(plaintext: &[u8], key_bytes: &[u8; 32]) -> Result<String, String> {
+    let key = Key::<Aes256Gcm>::from_slice(key_bytes);
+    let cipher = Aes256Gcm::new(key);
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext)
+        .map_err(|e| format!("aes-gcm encrypt failed: {e}"))?;
+    let mut combined = nonce.to_vec();
+    combined.extend_from_slice(&ciphertext);
+    Ok(hex::encode(combined))
+}
+
+/// Decrypt hex(nonce || ciphertext_with_tag), return plaintext bytes.
+fn decrypt_share(payload_hex: &str, key_bytes: &[u8; 32]) -> Result<Vec<u8>, String> {
+    let combined =
+        hex::decode(payload_hex).map_err(|e| format!("hex decode failed: {e}"))?;
+    if combined.len() < 12 {
+        return Err("payload too short: must be at least 12 bytes (nonce)".to_string());
+    }
+    let (nonce_bytes, ciphertext) = combined.split_at(12);
+    let nonce = Nonce::from_slice(nonce_bytes);
+    let key = Key::<Aes256Gcm>::from_slice(key_bytes);
+    let cipher = Aes256Gcm::new(key);
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| "aes-gcm decrypt failed: wrong key or corrupted payload".to_string())
+}
+
+// ── Backup ───────────────────────────────────────────────────────────
+
 /// Derive a backup envelope from a live share and user secret.
-/// Phase 2 stub — real AES-256-GCM encryption implemented in Phase 5.
+/// Uses AES-256-GCM with HKDF-SHA256 key derivation.
 pub fn derive_backup_envelope(
     local_encrypted_share: String,
     user_backup_secret: String,
+    created_at: String,
 ) -> Result<String, String> {
-    let _ = &user_backup_secret;
-    let result = BackupEnvelope {
+    let key = derive_aes_key(&user_backup_secret);
+    let payload = encrypt_share(local_encrypted_share.as_bytes(), &key)?;
+    let envelope = BackupEnvelope {
         version: "1".to_string(),
-        algorithm: "stub".to_string(),
-        created_at: "1970-01-01T00:00:00Z".to_string(),
-        payload: format!("stub_envelope_{local_encrypted_share}"),
+        algorithm: "aes-256-gcm-hkdf-sha256".to_string(),
+        created_at,
+        payload,
     };
-    serde_json::to_string(&result).map_err(|e| e.to_string())
+    serde_json::to_string(&envelope).map_err(|e| e.to_string())
 }
 
 /// Decrypt a backup envelope to recover the device backup share.
-/// Phase 2 stub — real decryption implemented in Phase 5.
 pub fn decrypt_backup_share(
     encrypted_envelope: String,
     user_backup_secret: String,
 ) -> Result<String, String> {
-    let _ = &user_backup_secret;
+    let envelope: BackupEnvelope = serde_json::from_str(&encrypted_envelope)
+        .map_err(|e| format!("invalid BackupEnvelope JSON: {e}"))?;
+    let key = derive_aes_key(&user_backup_secret);
+    let plaintext_bytes = decrypt_share(&envelope.payload, &key)?;
+    let device_backup_share = String::from_utf8(plaintext_bytes)
+        .map_err(|e| format!("decrypted bytes are not valid UTF-8: {e}"))?;
     let result = DecryptBackupResult {
-        device_backup_share: format!("stub_decrypted_{encrypted_envelope}"),
+        device_backup_share,
     };
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
@@ -542,7 +598,7 @@ mod tests {
         .unwrap();
 
         let round1_json =
-            recover_start(session_id.clone(), backup_share, server_round1).unwrap();
+            recover_start(session_id.clone(), backup_share, server_round1, 1).unwrap();
         let round1_result: MpcRoundResult = serde_json::from_str(&round1_json).unwrap();
         assert_eq!(round1_result.status, "continue");
         assert_eq!(round1_result.round, 1);
@@ -596,7 +652,7 @@ mod tests {
         .unwrap();
 
         let round1_json =
-            recover_start(session_id.clone(), backup_share, server_round1).unwrap();
+            recover_start(session_id.clone(), backup_share, server_round1, 1).unwrap();
         let round1_result: MpcRoundResult = serde_json::from_str(&round1_json).unwrap();
         let client_round1: RecoveryRound1ClientPayload =
             serde_json::from_str(round1_result.client_payload.as_ref().unwrap()).unwrap();
@@ -783,20 +839,66 @@ mod tests {
     }
 
     #[test]
-    fn test_derive_backup_envelope_returns_valid_json() {
-        let result = derive_backup_envelope("share_abc".into(), "secret_xyz".into()).unwrap();
-        let parsed: BackupEnvelope = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.version, "1");
-        assert_eq!(parsed.algorithm, "stub");
-        assert!(parsed.payload.starts_with("stub_envelope_"));
-        assert!(!result.contains("secret_xyz"));
+    fn test_backup_roundtrip() {
+        let share = r#"{"dummy":"masterkey2_content"}"#.to_string();
+        let secret = "test-secret-high-entropy-32chars".to_string();
+        let created = "2026-04-08T00:00:00Z".to_string();
+
+        let envelope_json =
+            derive_backup_envelope(share.clone(), secret.clone(), created).unwrap();
+        let envelope: BackupEnvelope = serde_json::from_str(&envelope_json).unwrap();
+        assert_eq!(envelope.algorithm, "aes-256-gcm-hkdf-sha256");
+        assert_eq!(envelope.version, "1");
+
+        let result_json = decrypt_backup_share(envelope_json, secret).unwrap();
+        let result: DecryptBackupResult = serde_json::from_str(&result_json).unwrap();
+        assert_eq!(result.device_backup_share, share);
     }
 
     #[test]
-    fn test_decrypt_backup_share_returns_valid_json() {
-        let result = decrypt_backup_share("envelope_data".into(), "secret_xyz".into()).unwrap();
-        let parsed: DecryptBackupResult = serde_json::from_str(&result).unwrap();
-        assert!(parsed.device_backup_share.starts_with("stub_decrypted_"));
-        assert!(!result.contains("secret_xyz"));
+    fn test_backup_wrong_secret() {
+        let share = r#"{"dummy":"masterkey2"}"#.to_string();
+        let envelope_json = derive_backup_envelope(
+            share,
+            "correct-secret".to_string(),
+            "2026-04-08T00:00:00Z".to_string(),
+        )
+        .unwrap();
+        let result = decrypt_backup_share(envelope_json, "wrong-secret".to_string());
+        assert!(result.is_err(), "wrong secret must fail GCM tag verification");
+        assert!(result.unwrap_err().contains("decrypt failed"));
+    }
+
+    #[test]
+    fn test_backup_corrupted_payload() {
+        let share = r#"{"dummy":"mk"}"#.to_string();
+        let secret = "test-secret".to_string();
+        let envelope_json = derive_backup_envelope(
+            share,
+            secret.clone(),
+            "2026-04-08T00:00:00Z".to_string(),
+        )
+        .unwrap();
+        let mut envelope: BackupEnvelope = serde_json::from_str(&envelope_json).unwrap();
+        envelope.payload = "deadbeef".to_string();
+        let corrupted_json = serde_json::to_string(&envelope).unwrap();
+        let result = decrypt_backup_share(corrupted_json, secret);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_backup_nonce_unique() {
+        let share = r#"{"key":"value"}"#.to_string();
+        let secret = "nonce-test-secret".to_string();
+        let ts = "2026-04-08T00:00:00Z".to_string();
+        let e1_json =
+            derive_backup_envelope(share.clone(), secret.clone(), ts.clone()).unwrap();
+        let e2_json = derive_backup_envelope(share, secret, ts).unwrap();
+        let e1: BackupEnvelope = serde_json::from_str(&e1_json).unwrap();
+        let e2: BackupEnvelope = serde_json::from_str(&e2_json).unwrap();
+        assert_ne!(
+            e1.payload, e2.payload,
+            "nonce must be unique per invocation"
+        );
     }
 }

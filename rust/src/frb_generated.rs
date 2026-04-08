@@ -107,12 +107,14 @@ fn wire__crate__api__mpc_engine__derive_backup_envelope_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_local_encrypted_share = <String>::sse_decode(&mut deserializer);
             let api_user_backup_secret = <String>::sse_decode(&mut deserializer);
+            let api_created_at = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::mpc_engine::derive_backup_envelope(
                         api_local_encrypted_share,
                         api_user_backup_secret,
+                        api_created_at,
                     )?;
                     Ok(output_ok)
                 })())
@@ -318,6 +320,7 @@ fn wire__crate__api__mpc_engine__recover_start_impl(
             let api_session_id = <String>::sse_decode(&mut deserializer);
             let api_backup_share = <String>::sse_decode(&mut deserializer);
             let api_server_payload = <String>::sse_decode(&mut deserializer);
+            let api_current_rotation_version = <i32>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -325,6 +328,7 @@ fn wire__crate__api__mpc_engine__recover_start_impl(
                         api_session_id,
                         api_backup_share,
                         api_server_payload,
+                        api_current_rotation_version,
                     )?;
                     Ok(output_ok)
                 })())

@@ -24,6 +24,7 @@ pub struct RecoverySession {
     pub master_key: MasterKey2,
     pub coin_flip_party1_first_message: coin_flip_optimal_rounds::Party1FirstMessage<GE>,
     pub coin_flip_party2_first_message: coin_flip_optimal_rounds::Party2FirstMessage<GE>,
+    pub rotation_version: i32,
 }
 
 /// Thread-safe global session maps.
