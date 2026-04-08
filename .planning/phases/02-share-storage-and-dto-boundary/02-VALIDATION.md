@@ -3,7 +3,7 @@ phase: 2
 slug: share-storage-and-dto-boundary
 status: draft
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-04-08
 ---
 
@@ -38,11 +38,10 @@ created: 2026-04-08
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 02-01-01 | 01 | 1 | D-06 | — | BackupEnvelope DTO fields correct | unit | `flutter test test/unit/backup_envelope_test.dart` | ❌ W0 | ⬜ pending |
-| 02-01-02 | 01 | 1 | D-10/D-11 | — | toString redacts sensitive fields | unit | `flutter test test/unit/dto_redaction_test.dart` | ❌ W0 | ⬜ pending |
-| 02-01-03 | 01 | 1 | D-07/D-08 | — | Rust stubs return expected format | unit | `cd rust && cargo test backup` | ❌ W0 | ⬜ pending |
-| 02-01-04 | 01 | 1 | D-09 | — | FRB codegen succeeds after Rust changes | integration | `flutter_rust_bridge_codegen generate` | ✅ | ⬜ pending |
-| 02-01-05 | 01 | 1 | D-07/D-08 | — | MpcEngine wrapper calls new stubs | unit | `flutter test test/unit/mpc_engine_test.dart` | ✅ | ⬜ pending |
+| 02-01-01 | 01 | 1 | D-07/D-08 | — | Rust stubs return expected format | unit | `cd rust && cargo test backup` | ❌ W0 | ⬜ pending |
+| 02-01-02 | 01 | 1 | D-09 | — | FRB codegen succeeds after Rust changes | integration | `flutter_rust_bridge_codegen generate` | ✅ | ⬜ pending |
+| 02-02-01 | 02 | 2 | D-06/D-10/D-11 | — | BackupEnvelope DTO + toString redaction | unit | `flutter test test/dto/mpc_dtos_test.dart` | ❌ TDD | ⬜ pending |
+| 02-02-02 | 02 | 2 | D-07/D-08 | — | MpcEngine wrapper calls new stubs | unit | `flutter test test/bridge/mpc_engine_test.dart` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -50,10 +49,7 @@ created: 2026-04-08
 
 ## Wave 0 Requirements
 
-- [ ] `test/unit/backup_envelope_test.dart` — BackupEnvelope DTO construction, JSON round-trip, field validation
-- [ ] `test/unit/dto_redaction_test.dart` — toString() redaction for all sensitive DTOs
-
-*Existing `test/unit/mpc_engine_test.dart` covers MpcEngine wrapper methods.*
+*Inline TDD: Plan 02-02 Task 1 creates `test/dto/mpc_dtos_test.dart` as RED phase before implementation. Plan 02-02 Task 2 extends existing `test/bridge/mpc_engine_test.dart`. No separate Wave 0 plan needed.*
 
 ---
 

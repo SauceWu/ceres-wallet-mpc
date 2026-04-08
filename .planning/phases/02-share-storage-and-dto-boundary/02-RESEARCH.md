@@ -491,17 +491,19 @@ void main() {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`decryptBackupShare` input type**
    - What we know: Architecture doc §0.6 shows `decryptBackupShare(encryptedDeviceBackupShare, userBackupSecret)`. `encryptedDeviceBackupShare` is what the host stored after calling `deriveBackupEnvelope`.
    - What's unclear: Does the Dart method accept the full `BackupEnvelope` object (and serialize to JSON internally), or does it accept the raw JSON string that was stored?
    - Recommendation: Accept raw `String encryptedEnvelope` (JSON string) for symmetry with how hosts would store it (as a string blob). Rust side parses or ignores it in stub.
+   - RESOLVED: Plans use `String encryptedEnvelope` parameter in both Rust and Dart layers.
 
 2. **FRB codegen exact command for this project**
    - What we know: Phase 1 established FRB 2.12.0 and the codegen ran successfully (generated files present).
    - What's unclear: The exact invocation (working directory, `flutter_rust_bridge_codegen` vs `dart run flutter_rust_bridge_codegen`, config file path) is not documented in this research session.
    - Recommendation: Read Phase 1 PLAN.md for the exact command used. Do not guess.
+   - RESOLVED: Plan 02-01 Task 2 uses `flutter_rust_bridge_codegen generate` (same as Phase 1).
 
 ---
 
