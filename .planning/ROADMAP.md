@@ -3,16 +3,16 @@
 ### Milestone M1: MPC Foundation
 
 #### Phase 1: Rust Bridge Skeleton
-- 建立 `Cargo.toml`
-- 建立 Rust crate
-- 接入 `flutter_rust_bridge`
-- 暴露最小 wrapper 接口：
-  - `keygen_start`
-  - `keygen_continue`
-  - `recover_start`
-  - `recover_continue`
-  - `sign_start`
-  - `sign_continue`
+
+**Goal:** 建立 Rust crate + FRB v2 基础设施骨架，暴露 6 个 stub 函数，创建 Dart 封装层（MpcEngine / MpcClient / MpcTransport），确保 Flutter 可以成功调用 Rust stub 并通过 analyze / test。
+
+**Requirements:** [MPC-01, MPC-02, MPC-03]
+
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — FRB 基础设施集成 + Rust DTO/Stub 定义 + Codegen
+- [ ] 01-02-PLAN.md — Dart 封装层（MpcEngine/MpcClient/MpcTransport）+ 单元测试
 
 Success criteria:
 - Flutter package 可以成功引用 FRB 生成绑定
