@@ -1,4 +1,4 @@
-use crate::api::types::MpcRoundResult;
+use crate::api::types::{BackupEnvelope, DecryptBackupResult, MpcRoundResult};
 
 /// Keygen round 1: receive server payload, return client payload.
 /// Phase 1 stub — real kms-secp256k1 logic will replace this in Phase 3.
@@ -95,10 +95,39 @@ pub fn sign_continue(session_id: String, server_payload: String) -> Result<Strin
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
+/// Derive a backup envelope from a live share and user secret.
+/// Phase 2 stub — real AES-256-GCM encryption implemented in Phase 5.
+pub fn derive_backup_envelope(
+    local_encrypted_share: String,
+    user_backup_secret: String,
+) -> Result<String, String> {
+    let _ = &user_backup_secret;
+    let result = BackupEnvelope {
+        version: "1".to_string(),
+        algorithm: "stub".to_string(),
+        created_at: "1970-01-01T00:00:00Z".to_string(),
+        payload: format!("stub_envelope_{local_encrypted_share}"),
+    };
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// Decrypt a backup envelope to recover the device backup share.
+/// Phase 2 stub — real decryption implemented in Phase 5.
+pub fn decrypt_backup_share(
+    encrypted_envelope: String,
+    user_backup_secret: String,
+) -> Result<String, String> {
+    let _ = &user_backup_secret;
+    let result = DecryptBackupResult {
+        device_backup_share: format!("stub_decrypted_{encrypted_envelope}"),
+    };
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::types::MpcRoundResult;
+    use crate::api::types::{BackupEnvelope, DecryptBackupResult, MpcRoundResult};
 
     const VALID_PAYLOAD: &str = r#"{"round":1}"#;
 
@@ -163,5 +192,28 @@ mod tests {
         let result = keygen_start("s1".into(), "not-json".into());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid server_payload JSON"));
+    }
+
+    #[test]
+    fn test_derive_backup_envelope_returns_valid_json() {
+        let result = derive_backup_envelope("share_abc".into(), "secret_xyz".into()).unwrap();
+        let parsed: BackupEnvelope = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed.version, "1");
+        assert_eq!(parsed.algorithm, "stub");
+        assert_eq!(parsed.created_at, "1970-01-01T00:00:00Z");
+        assert!(parsed.payload.starts_with("stub_envelope_"));
+        assert!(parsed.payload.contains("share_abc"));
+        // Security: must NOT contain userBackupSecret
+        assert!(!result.contains("secret_xyz"));
+    }
+
+    #[test]
+    fn test_decrypt_backup_share_returns_valid_json() {
+        let result = decrypt_backup_share("envelope_data".into(), "secret_xyz".into()).unwrap();
+        let parsed: DecryptBackupResult = serde_json::from_str(&result).unwrap();
+        assert!(parsed.device_backup_share.starts_with("stub_decrypted_"));
+        assert!(parsed.device_backup_share.contains("envelope_data"));
+        // Security: must NOT contain userBackupSecret
+        assert!(!result.contains("secret_xyz"));
     }
 }
