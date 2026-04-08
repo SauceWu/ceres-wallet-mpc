@@ -64,3 +64,23 @@ Future<String> signContinue({
   sessionId: sessionId,
   serverPayload: serverPayload,
 );
+
+/// Derive a backup envelope from a live share and user secret.
+/// Phase 2 stub — real AES-256-GCM encryption implemented in Phase 5.
+Future<String> deriveBackupEnvelope({
+  required String localEncryptedShare,
+  required String userBackupSecret,
+}) => RustLib.instance.api.crateApiMpcEngineDeriveBackupEnvelope(
+  localEncryptedShare: localEncryptedShare,
+  userBackupSecret: userBackupSecret,
+);
+
+/// Decrypt a backup envelope to recover the device backup share.
+/// Phase 2 stub — real decryption implemented in Phase 5.
+Future<String> decryptBackupShare({
+  required String encryptedEnvelope,
+  required String userBackupSecret,
+}) => RustLib.instance.api.crateApiMpcEngineDecryptBackupShare(
+  encryptedEnvelope: encryptedEnvelope,
+  userBackupSecret: userBackupSecret,
+);
