@@ -1,6 +1,7 @@
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_mpc_wallet/flutter_mpc_wallet.dart';
+import 'package:flutter_mpc_wallet/src/rust/frb_generated.dart';
+import 'package:flutter_mpc_wallet/src/rust/api/simple.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

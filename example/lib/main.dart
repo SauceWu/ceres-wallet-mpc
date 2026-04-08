@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_mpc_wallet/flutter_mpc_wallet.dart';
+import 'package:flutter_mpc_wallet/src/rust/frb_generated.dart';
+import 'package:flutter_mpc_wallet/src/rust/api/simple.dart';
 
 Future<void> main() async {
   await RustLib.init();
@@ -13,7 +14,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(title: const Text('flutter_rust_bridge quickstart')),
+        appBar: AppBar(title: const Text('flutter_mpc_wallet example')),
         body: Center(
           child: Text(
             'Action: Call Rust `greet("Tom")`\nResult: `${greet(name: "Tom")}`',

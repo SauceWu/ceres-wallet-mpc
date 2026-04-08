@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/mpc_engine.dart';
 import 'api/simple.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -66,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1918914929;
+  int get rustContentHash => -1497784847;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -81,6 +82,38 @@ abstract class RustLibApi extends BaseApi {
   String crateApiSimpleGreet({required String name});
 
   Future<void> crateApiSimpleInitApp();
+
+  Future<String> crateApiMpcEngineKeygenContinue({
+    required String sessionId,
+    required String serverPayload,
+  });
+
+  Future<String> crateApiMpcEngineKeygenStart({
+    required String sessionId,
+    required String serverPayload,
+  });
+
+  Future<String> crateApiMpcEngineRecoverContinue({
+    required String sessionId,
+    required String serverPayload,
+  });
+
+  Future<String> crateApiMpcEngineRecoverStart({
+    required String sessionId,
+    required String backupShare,
+    required String serverPayload,
+  });
+
+  Future<String> crateApiMpcEngineSignContinue({
+    required String sessionId,
+    required String serverPayload,
+  });
+
+  Future<String> crateApiMpcEngineSignStart({
+    required String sessionId,
+    required String share,
+    required String serverPayload,
+  });
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -140,6 +173,219 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSimpleInitAppConstMeta =>
       const TaskConstMeta(debugName: "init_app", argNames: []);
+
+  @override
+  Future<String> crateApiMpcEngineKeygenContinue({
+    required String sessionId,
+    required String serverPayload,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sessionId, serializer);
+          sse_encode_String(serverPayload, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineKeygenContinueConstMeta,
+        argValues: [sessionId, serverPayload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineKeygenContinueConstMeta =>
+      const TaskConstMeta(
+        debugName: "keygen_continue",
+        argNames: ["sessionId", "serverPayload"],
+      );
+
+  @override
+  Future<String> crateApiMpcEngineKeygenStart({
+    required String sessionId,
+    required String serverPayload,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sessionId, serializer);
+          sse_encode_String(serverPayload, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 4,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineKeygenStartConstMeta,
+        argValues: [sessionId, serverPayload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineKeygenStartConstMeta =>
+      const TaskConstMeta(
+        debugName: "keygen_start",
+        argNames: ["sessionId", "serverPayload"],
+      );
+
+  @override
+  Future<String> crateApiMpcEngineRecoverContinue({
+    required String sessionId,
+    required String serverPayload,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sessionId, serializer);
+          sse_encode_String(serverPayload, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineRecoverContinueConstMeta,
+        argValues: [sessionId, serverPayload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineRecoverContinueConstMeta =>
+      const TaskConstMeta(
+        debugName: "recover_continue",
+        argNames: ["sessionId", "serverPayload"],
+      );
+
+  @override
+  Future<String> crateApiMpcEngineRecoverStart({
+    required String sessionId,
+    required String backupShare,
+    required String serverPayload,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sessionId, serializer);
+          sse_encode_String(backupShare, serializer);
+          sse_encode_String(serverPayload, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 6,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineRecoverStartConstMeta,
+        argValues: [sessionId, backupShare, serverPayload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineRecoverStartConstMeta =>
+      const TaskConstMeta(
+        debugName: "recover_start",
+        argNames: ["sessionId", "backupShare", "serverPayload"],
+      );
+
+  @override
+  Future<String> crateApiMpcEngineSignContinue({
+    required String sessionId,
+    required String serverPayload,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sessionId, serializer);
+          sse_encode_String(serverPayload, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 7,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineSignContinueConstMeta,
+        argValues: [sessionId, serverPayload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineSignContinueConstMeta =>
+      const TaskConstMeta(
+        debugName: "sign_continue",
+        argNames: ["sessionId", "serverPayload"],
+      );
+
+  @override
+  Future<String> crateApiMpcEngineSignStart({
+    required String sessionId,
+    required String share,
+    required String serverPayload,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sessionId, serializer);
+          sse_encode_String(share, serializer);
+          sse_encode_String(serverPayload, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineSignStartConstMeta,
+        argValues: [sessionId, share, serverPayload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineSignStartConstMeta => const TaskConstMeta(
+    debugName: "sign_start",
+    argNames: ["sessionId", "share", "serverPayload"],
+  );
 
   @protected
   String dco_decode_String(dynamic raw) {
