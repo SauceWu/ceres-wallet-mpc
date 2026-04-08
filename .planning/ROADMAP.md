@@ -37,10 +37,16 @@ Success criteria:
 - 数据库不再承载任何私钥语义
 
 #### Phase 3: Real Keygen / Recovery
-- 用 `ZenGo-X/kms-secp256k1` 填充真实 keygen/recovery wrapper
-- 打通 Flutter orchestration
-- 完成 `group public key -> address` 校验
-- 完成 env-gated backend create + recover 验证
+
+**Goal:** 用 ZenGo-X/kms-secp256k1 替换 keygen/recovery stub，实现真实两方 ECDSA 协议，打通 MpcClient 编排层驱动完整 round-trip，完成 group public key -> EVM address 推导与校验。
+
+**Requirements:** [MPC-03, MPC-07, MPC-08, MPC-10]
+
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Rust kms-secp256k1 依赖集成 + 真实 keygen/recovery 协议实现 + SessionMap + EVM 地址推导 + Rust 集成测试
+- [ ] 03-02-PLAN.md — FRB codegen + MpcClient 编排层 + 异常类型 + Dart 单元测试
 
 Success criteria:
 - 创建闭环成立
@@ -65,5 +71,5 @@ Success criteria:
 - rotation 逻辑稳定
 
 ### Current Focus
-- 当前优先进入 Phase 2
+- 当前优先进入 Phase 3
 - 不先碰业务 UI，不先碰多链，不先碰原钱包 SDK 主项目耦合
