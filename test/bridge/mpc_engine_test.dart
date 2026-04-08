@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:flutter_mpc_wallet/src/bridge/mpc_engine.dart';
-import 'package:flutter_mpc_wallet/src/dto/mpc_dtos.dart';
-import 'package:flutter_mpc_wallet/src/rust/frb_generated.dart';
+import 'package:ceres_mpc/src/bridge/mpc_engine.dart';
+import 'package:ceres_mpc/src/dto/mpc_dtos.dart';
+import 'package:ceres_mpc/src/rust/frb_generated.dart';
 
 class MockRustLibApi extends Mock implements RustLibApi {}
 
@@ -78,12 +78,13 @@ void main() {
         sessionId: any(named: 'sessionId'),
         backupShare: any(named: 'backupShare'),
         serverPayload: any(named: 'serverPayload'),
+        currentRotationVersion: any(named: 'currentRotationVersion'),
       ),
     ).thenAnswer(
       (_) async => _roundJson(clientPayload: 'stub_recover_round1'),
     );
 
-    final result = await engine.recoverStart('sess1', 'backup_data', '{}');
+    final result = await engine.recoverStart('sess1', 'backup_data', '{}', 1);
 
     expect(result.isContinue, isTrue);
     verify(
@@ -91,6 +92,7 @@ void main() {
         sessionId: 'sess1',
         backupShare: 'backup_data',
         serverPayload: '{}',
+        currentRotationVersion: 1,
       ),
     ).called(1);
   });
@@ -152,6 +154,7 @@ void main() {
         sessionId: any(named: 'sessionId'),
         backupShare: any(named: 'backupShare'),
         serverPayload: any(named: 'serverPayload'),
+        currentRotationVersion: any(named: 'currentRotationVersion'),
       ),
     ).thenAnswer((_) async => _roundJson());
 
@@ -179,7 +182,7 @@ void main() {
 
     await engine.keygenStart('s', '{}');
     await engine.keygenContinue('s', '{}');
-    await engine.recoverStart('s', 'b', '{}');
+    await engine.recoverStart('s', 'b', '{}', 1);
     await engine.recoverContinue('s', '{}');
     await engine.signStart('s', 'sh', '{}');
     await engine.signContinue('s', '{}');
@@ -196,6 +199,7 @@ void main() {
           sessionId: any(named: 'sessionId'),
           backupShare: any(named: 'backupShare'),
           serverPayload: any(named: 'serverPayload'),
+          currentRotationVersion: any(named: 'currentRotationVersion'),
         )).called(1);
     verify(() => mockApi.crateApiMpcEngineRecoverContinue(
           sessionId: any(named: 'sessionId'),
@@ -224,10 +228,12 @@ void main() {
       () => mockApi.crateApiMpcEngineDeriveBackupEnvelope(
         localEncryptedShare: any(named: 'localEncryptedShare'),
         userBackupSecret: any(named: 'userBackupSecret'),
+        createdAt: any(named: 'createdAt'),
       ),
     ).thenAnswer((_) async => envelopeJson);
 
-    final result = await engine.deriveBackupEnvelope('share_abc', 'secret_xyz');
+    final result = await engine.deriveBackupEnvelope(
+        'share_abc', 'secret_xyz', '1970-01-01T00:00:00Z');
 
     expect(result, isA<BackupEnvelope>());
     expect(result.version, '1');
@@ -239,6 +245,7 @@ void main() {
       () => mockApi.crateApiMpcEngineDeriveBackupEnvelope(
         localEncryptedShare: 'share_abc',
         userBackupSecret: 'secret_xyz',
+        createdAt: '1970-01-01T00:00:00Z',
       ),
     ).called(1);
   });

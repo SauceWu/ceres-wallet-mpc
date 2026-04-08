@@ -77,6 +77,8 @@ class MpcClient {
     required String mpcKeyId,
     required String encryptedBackupShare,
     required String userBackupSecret,
+    required int currentRotationVersion,
+    String? newUserBackupSecret,
   }) async {
     final backupShare = await _engine.decryptBackupShare(
       encryptedBackupShare,
@@ -94,6 +96,7 @@ class MpcClient {
       sessionId,
       backupShare,
       jsonEncode(initData['serverPayload']),
+      currentRotationVersion,
     );
     _checkProtocolError(round1);
 
@@ -123,7 +126,31 @@ class MpcClient {
     if (currentResult.isCompleted && currentResult.clientPayload != null) {
       final payload =
           jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
-      return RecoveryResult.fromJson(_snakeToCamelKeys(payload));
+      var result = RecoveryResult.fromJson(_snakeToCamelKeys(payload));
+
+      // Generate new backup after rotation if secret provided
+      if (newUserBackupSecret != null) {
+        final envelope = await _engine.deriveBackupEnvelope(
+          result.localEncryptedShare,
+          newUserBackupSecret,
+          DateTime.now().toUtc().toIso8601String(),
+        );
+        result = RecoveryResult(
+          mpcKeyId: result.mpcKeyId,
+          address: result.address,
+          publicKey: result.publicKey,
+          rotationVersion: result.rotationVersion,
+          localEncryptedShare: result.localEncryptedShare,
+          encryptedBackupShare: jsonEncode({
+            'version': envelope.version,
+            'algorithm': envelope.algorithm,
+            'created_at': envelope.createdAt,
+            'payload': envelope.payload,
+          }),
+        );
+      }
+
+      return result;
     }
 
     throw MpcProtocolException(

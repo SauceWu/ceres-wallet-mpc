@@ -43,11 +43,13 @@ class MpcEngine {
     String sessionId,
     String backupShare,
     String serverPayload,
+    int currentRotationVersion,
   ) async {
     final result = await _api.crateApiMpcEngineRecoverStart(
       sessionId: sessionId,
       backupShare: backupShare,
       serverPayload: serverPayload,
+      currentRotationVersion: currentRotationVersion,
     );
     return MpcRoundResult.fromJson(
       jsonDecode(result) as Map<String, dynamic>,
@@ -96,15 +98,16 @@ class MpcEngine {
   }
 
   /// Derive a backup envelope from a live share and user secret.
-  /// Phase 2 stub — real AES-256-GCM encryption in Phase 5.
-  /// Per D-07: SDK computes envelope, host stores it.
+  /// Uses AES-256-GCM with HKDF-SHA256 key derivation.
   Future<BackupEnvelope> deriveBackupEnvelope(
     String localEncryptedShare,
     String userBackupSecret,
+    String createdAt,
   ) async {
     final result = await _api.crateApiMpcEngineDeriveBackupEnvelope(
       localEncryptedShare: localEncryptedShare,
       userBackupSecret: userBackupSecret,
+      createdAt: createdAt,
     );
     return BackupEnvelope.fromJson(
       jsonDecode(result) as Map<String, dynamic>,

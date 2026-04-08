@@ -129,7 +129,7 @@ void main() {
               }));
 
       when(() =>
-              mockEngine.recoverStart('sess_rc1', 'decrypted_backup_share', any()))
+              mockEngine.recoverStart('sess_rc1', 'decrypted_backup_share', any(), any()))
           .thenAnswer((_) async => const MpcRoundResult(
                 status: 'continue',
                 round: 1,
@@ -158,6 +158,7 @@ void main() {
         mpcKeyId: 'key_001',
         encryptedBackupShare: 'encrypted_backup_blob',
         userBackupSecret: 'user_secret',
+        currentRotationVersion: 1,
       );
 
       expect(result.mpcKeyId, equals('key_001'));
@@ -170,7 +171,7 @@ void main() {
           'encrypted_backup_blob', 'user_secret')).called(1);
       verify(() => mockTransport.send('/recovery/start', any())).called(1);
       verify(() => mockEngine.recoverStart(
-          'sess_rc1', 'decrypted_backup_share', any())).called(1);
+          'sess_rc1', 'decrypted_backup_share', any(), any())).called(1);
     });
 
     test('throws MpcProtocolException when recover engine returns error',
@@ -182,7 +183,7 @@ void main() {
                 'sessionId': 'sess_err',
                 'serverPayload': {'round': 1},
               }));
-      when(() => mockEngine.recoverStart('sess_err', 'backup_share', any()))
+      when(() => mockEngine.recoverStart('sess_err', 'backup_share', any(), any()))
           .thenAnswer((_) async => const MpcRoundResult(
                 status: 'error',
                 round: 1,
@@ -194,6 +195,7 @@ void main() {
           mpcKeyId: 'key_001',
           encryptedBackupShare: 'enc',
           userBackupSecret: 'sec',
+          currentRotationVersion: 1,
         ),
         throwsA(isA<MpcProtocolException>()),
       );

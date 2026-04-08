@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
-        stem: 'flutter_mpc_wallet',
+        stem: 'ceres_mpc',
         ioDirectory: 'rust/target/release/',
         webPrefix: 'pkg/',
         wasmBindgenName: 'wasm_bindgen',
@@ -87,6 +87,7 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiMpcEngineDeriveBackupEnvelope({
     required String localEncryptedShare,
     required String userBackupSecret,
+    required String createdAt,
   });
 
   String crateApiSimpleGreet({required String name});
@@ -112,6 +113,7 @@ abstract class RustLibApi extends BaseApi {
     required String sessionId,
     required String backupShare,
     required String serverPayload,
+    required int currentRotationVersion,
   });
 
   Future<String> crateApiMpcEngineSignContinue({
@@ -173,6 +175,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateApiMpcEngineDeriveBackupEnvelope({
     required String localEncryptedShare,
     required String userBackupSecret,
+    required String createdAt,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -180,6 +183,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(localEncryptedShare, serializer);
           sse_encode_String(userBackupSecret, serializer);
+          sse_encode_String(createdAt, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -192,7 +196,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiMpcEngineDeriveBackupEnvelopeConstMeta,
-        argValues: [localEncryptedShare, userBackupSecret],
+        argValues: [localEncryptedShare, userBackupSecret, createdAt],
         apiImpl: this,
       ),
     );
@@ -201,7 +205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiMpcEngineDeriveBackupEnvelopeConstMeta =>
       const TaskConstMeta(
         debugName: "derive_backup_envelope",
-        argNames: ["localEncryptedShare", "userBackupSecret"],
+        argNames: ["localEncryptedShare", "userBackupSecret", "createdAt"],
       );
 
   @override
@@ -364,6 +368,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String sessionId,
     required String backupShare,
     required String serverPayload,
+    required int currentRotationVersion,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -372,6 +377,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(sessionId, serializer);
           sse_encode_String(backupShare, serializer);
           sse_encode_String(serverPayload, serializer);
+          sse_encode_i_32(currentRotationVersion, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -384,7 +390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiMpcEngineRecoverStartConstMeta,
-        argValues: [sessionId, backupShare, serverPayload],
+        argValues: [sessionId, backupShare, serverPayload, currentRotationVersion],
         apiImpl: this,
       ),
     );
@@ -393,7 +399,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiMpcEngineRecoverStartConstMeta =>
       const TaskConstMeta(
         debugName: "recover_start",
-        argNames: ["sessionId", "backupShare", "serverPayload"],
+        argNames: ["sessionId", "backupShare", "serverPayload", "currentRotationVersion"],
       );
 
   @override
