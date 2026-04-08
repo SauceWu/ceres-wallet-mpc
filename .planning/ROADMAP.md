@@ -92,3 +92,13 @@ Success criteria:
 ### Current Focus
 - 当前优先进入 Phase 3
 - 不先碰业务 UI，不先碰多链，不先碰原钱包 SDK 主项目耦合
+
+#### Phase 6: Key Export / Wallet Migration
+- 从两方 MPC share 重建完整私钥
+- Rust 实现 party1_secret * party2_secret 私钥重建
+- Dart MpcClient.exportPrivateKey() 方法
+- 导出后标记密钥为 exported 状态
+
+Success criteria:
+- 导出的私钥可验证对应 keygen 产生的 EVM 地址
+- 导出后 MPC 密钥标记为 exported

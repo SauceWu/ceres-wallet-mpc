@@ -1,0 +1,17 @@
+# Cargokit precompiled binaries configuration
+# Users with this config will auto-download binaries from GitHub Releases
+# instead of compiling Rust locally.
+#
+# Setup steps:
+# 1. Generate Ed25519 keypair: dart run cargokit:generate_key
+# 2. Put public_key below
+# 3. Store private key as GitHub Actions secret: CARGOKIT_PRIVATE_KEY
+# 4. Push a version tag (v0.1.0) to trigger precompile workflow
+#
+# To disable precompiled binaries (force local build), create
+# cargokit_options.yaml in your project root with:
+#   use_precompiled_binaries: false
+
+precompiled_binaries:
+  url_prefix: "https://github.com/SauceWu/ceres-mpc/releases/download/"
+  public_key: "606e900a7f55438f973db7d044303f796a44eb82e5217abbae56ed425ec599ea"
