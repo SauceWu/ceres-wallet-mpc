@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_mpc_wallet/src/bridge/mpc_engine.dart';
+import 'package:flutter_mpc_wallet/src/dto/mpc_dtos.dart';
 import 'package:flutter_mpc_wallet/src/rust/frb_generated.dart';
 
 class MockRustLibApi extends Mock implements RustLibApi {}
@@ -209,5 +210,60 @@ void main() {
           sessionId: any(named: 'sessionId'),
           serverPayload: any(named: 'serverPayload'),
         )).called(1);
+  });
+
+  test('deriveBackupEnvelope returns BackupEnvelope', () async {
+    final envelopeJson = jsonEncode({
+      'version': '1',
+      'algorithm': 'stub',
+      'created_at': '1970-01-01T00:00:00Z',
+      'payload': 'stub_envelope_share_abc',
+    });
+
+    when(
+      () => mockApi.crateApiMpcEngineDeriveBackupEnvelope(
+        localEncryptedShare: any(named: 'localEncryptedShare'),
+        userBackupSecret: any(named: 'userBackupSecret'),
+      ),
+    ).thenAnswer((_) async => envelopeJson);
+
+    final result = await engine.deriveBackupEnvelope('share_abc', 'secret_xyz');
+
+    expect(result, isA<BackupEnvelope>());
+    expect(result.version, '1');
+    expect(result.algorithm, 'stub');
+    expect(result.createdAt, '1970-01-01T00:00:00Z');
+    expect(result.payload, 'stub_envelope_share_abc');
+
+    verify(
+      () => mockApi.crateApiMpcEngineDeriveBackupEnvelope(
+        localEncryptedShare: 'share_abc',
+        userBackupSecret: 'secret_xyz',
+      ),
+    ).called(1);
+  });
+
+  test('decryptBackupShare returns opaque device backup share string', () async {
+    final decryptJson = jsonEncode({
+      'device_backup_share': 'stub_decrypted_envelope_data',
+    });
+
+    when(
+      () => mockApi.crateApiMpcEngineDecryptBackupShare(
+        encryptedEnvelope: any(named: 'encryptedEnvelope'),
+        userBackupSecret: any(named: 'userBackupSecret'),
+      ),
+    ).thenAnswer((_) async => decryptJson);
+
+    final result = await engine.decryptBackupShare('envelope_data', 'secret_xyz');
+
+    expect(result, 'stub_decrypted_envelope_data');
+
+    verify(
+      () => mockApi.crateApiMpcEngineDecryptBackupShare(
+        encryptedEnvelope: 'envelope_data',
+        userBackupSecret: 'secret_xyz',
+      ),
+    ).called(1);
   });
 }

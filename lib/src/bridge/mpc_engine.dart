@@ -94,4 +94,35 @@ class MpcEngine {
       jsonDecode(result) as Map<String, dynamic>,
     );
   }
+
+  /// Derive a backup envelope from a live share and user secret.
+  /// Phase 2 stub — real AES-256-GCM encryption in Phase 5.
+  /// Per D-07: SDK computes envelope, host stores it.
+  Future<BackupEnvelope> deriveBackupEnvelope(
+    String localEncryptedShare,
+    String userBackupSecret,
+  ) async {
+    final result = await _api.crateApiMpcEngineDeriveBackupEnvelope(
+      localEncryptedShare: localEncryptedShare,
+      userBackupSecret: userBackupSecret,
+    );
+    return BackupEnvelope.fromJson(
+      jsonDecode(result) as Map<String, dynamic>,
+    );
+  }
+
+  /// Decrypt a backup envelope to recover the device backup share.
+  /// Phase 2 stub — real decryption in Phase 5.
+  /// Per D-08: returns opaque deviceBackupShare string for recovery flow.
+  Future<String> decryptBackupShare(
+    String encryptedEnvelope,
+    String userBackupSecret,
+  ) async {
+    final result = await _api.crateApiMpcEngineDecryptBackupShare(
+      encryptedEnvelope: encryptedEnvelope,
+      userBackupSecret: userBackupSecret,
+    );
+    return (jsonDecode(result) as Map<String, dynamic>)['device_backup_share']
+        as String;
+  }
 }
