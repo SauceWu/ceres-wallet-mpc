@@ -1,3 +1,3 @@
 pub mod api;
 mod frb_generated;
-pub mod session;
+pub(crate) mod session;
