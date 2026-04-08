@@ -3,6 +3,7 @@
 `flutter_mpc_wallet` 是一个独立的 Flutter/Dart package，用来承载移动端 MPC 钱包相关能力，不再和原钱包 SDK 的业务代码强耦合。
 
 当前项目目标：
+
 - 抽离 Flutter 侧 MPC orchestration
 - 承载 keygen / recovery / sign 的客户端状态机
 - 统一 secure storage 中的 live share 管理
@@ -38,6 +39,7 @@
 当前只完成了项目初始化与规划迁入，业务代码尚未开始实现。
 
 下一轮建议直接从：
+
 - [.planning/NEXT_SESSION.md](/Users/stevensteven/workplace/flutter_project/flutter_mpc_wallet/.planning/NEXT_SESSION.md)
 - [.planning/ROADMAP.md](/Users/stevensteven/workplace/flutter_project/flutter_mpc_wallet/.planning/ROADMAP.md)
 开始，进入 Rust bridge skeleton 执行。
