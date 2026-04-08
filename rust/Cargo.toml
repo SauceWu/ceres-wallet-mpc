@@ -10,6 +10,15 @@ crate-type = ["cdylib", "staticlib"]
 flutter_rust_bridge = "=2.12.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+kms-secp256k1 = { git = "https://github.com/ZenGo-X/kms-secp256k1", tag = "v0.3.1", package = "kms", default-features = false }
+multi-party-ecdsa = { git = "https://github.com/KZen-networks/multi-party-ecdsa", tag = "v0.4.6" }
+curv-kzen = { git = "https://github.com/ZenGo-X/curv", tag = "v0.7.0", package = "curv", default-features = false, features = ["rust-gmp-kzen"] }
+paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.10" }
+zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.3.12" }
+centipede = { git = "https://github.com/KZen-networks/centipede", tag = "v0.2.12" }
+tiny-keccak = { version = "2", features = ["keccak"] }
+hex = "0.4"
+once_cell = "1"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

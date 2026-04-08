@@ -20,3 +20,28 @@ pub struct BackupEnvelope {
 pub struct DecryptBackupResult {
     pub device_backup_share: String,
 }
+
+/// Payload returned when keygen completes (status: "completed").
+/// Serialized as client_payload in the final MpcRoundResult.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeygenCompletedPayload {
+    pub mpc_key_id: String,
+    pub address: String,
+    pub public_key: String,
+    pub curve: String,
+    pub threshold: i32,
+    pub key_ref: String,
+    pub backup_state: String,
+    pub rotation_version: i32,
+    pub local_encrypted_share: String,
+}
+
+/// Payload returned when recovery completes (status: "completed").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryCompletedPayload {
+    pub mpc_key_id: String,
+    pub address: String,
+    pub public_key: String,
+    pub rotation_version: i32,
+    pub local_encrypted_share: String,
+}
