@@ -4,15 +4,15 @@
 
 #### Phase 1: Rust Bridge Skeleton
 
-**Goal:** 建立 Rust crate + FRB v2 基础设施骨架，暴露 6 个 stub 函数，创建 Dart 封装层（MpcEngine / MpcClient / MpcTransport），确保 Flutter 可以成功调用 Rust stub 并通过 analyze / test。
+**Goal:** 搭建 Rust crate + flutter_rust_bridge v2 骨架，暴露 6 个 MPC stub 函数，建立 Dart 侧 MpcEngine/MpcTransport/DTO 接口边界。
 
-**Requirements:** [MPC-01, MPC-02, MPC-03]
+**Requirements:** [MPC-02]
 
 **Plans:** 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — FRB 基础设施集成 + Rust DTO/Stub 定义 + Codegen
-- [ ] 01-02-PLAN.md — Dart 封装层（MpcEngine/MpcClient/MpcTransport）+ 单元测试
+- [ ] 01-01-PLAN.md — Rust Crate + FRB 基础设施（工具安装、FRB integrate、Rust stub API、FRB codegen）
+- [ ] 01-02-PLAN.md — Dart API 层封装 + 测试（DTO、MpcTransport、MpcEngine、mock 单元测试）
 
 Success criteria:
 - Flutter package 可以成功引用 FRB 生成绑定
