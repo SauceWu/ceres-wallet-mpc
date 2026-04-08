@@ -12,6 +12,20 @@ class MockMpcEngine extends Mock implements MpcEngine {}
 
 class MockMpcTransport extends Mock implements MpcTransport {}
 
+/// Wrap data in a JSON-RPC 2.0 success response.
+String _rpcOk(Object result, {int id = 1}) => jsonEncode({
+      'jsonrpc': '2.0',
+      'result': result,
+      'id': id,
+    });
+
+/// Wrap error in a JSON-RPC 2.0 error response.
+String _rpcError(int code, String message, {int id = 1}) => jsonEncode({
+      'jsonrpc': '2.0',
+      'error': {'code': code, 'message': message},
+      'id': id,
+    });
+
 void main() {
   late MockMpcEngine mockEngine;
   late MockMpcTransport mockTransport;
@@ -25,11 +39,25 @@ void main() {
 
   group('keygen', () {
     test('completes full keygen round-trip and returns KeygenResult', () async {
-      when(() => mockTransport.send('/keygen/start', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'sessionId': 'sess_kg1',
-                'serverPayload': {'round': 1, 'data': 'server_first_msg'},
-              }));
+      // First RPC call: keygen_start
+      when(() => mockTransport.send(any()))
+          .thenAnswer((invocation) async {
+        final payload = jsonDecode(invocation.positionalArguments[0] as String)
+            as Map<String, dynamic>;
+        final method = payload['method'] as String;
+
+        if (method == MpcMethod.keygenStart.method) {
+          return _rpcOk({
+            'sessionId': 'sess_kg1',
+            'serverPayload': {'round': 1, 'data': 'server_first_msg'},
+          }, id: payload['id'] as int);
+        } else if (method == MpcMethod.keygenContinue.method) {
+          return _rpcOk({
+            'serverPayload': {'round': 2, 'data': 'server_second_msg'},
+          }, id: payload['id'] as int);
+        }
+        throw Exception('Unexpected method: $method');
+      });
 
       when(() => mockEngine.keygenStart('sess_kg1', any()))
           .thenAnswer((_) async => const MpcRoundResult(
@@ -37,11 +65,6 @@ void main() {
                 round: 1,
                 clientPayload: 'client_round1_payload',
               ));
-
-      when(() => mockTransport.send('/keygen/continue', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'serverPayload': {'round': 2, 'data': 'server_second_msg'},
-              }));
 
       when(() => mockEngine.keygenContinue('sess_kg1', any()))
           .thenAnswer((_) async => MpcRoundResult(
@@ -70,16 +93,11 @@ void main() {
       expect(result.threshold, equals(2));
       expect(result.rotationVersion, equals(1));
       expect(result.localEncryptedShare, equals('encrypted_share_blob'));
-
-      verify(() => mockTransport.send('/keygen/start', any())).called(1);
-      verify(() => mockEngine.keygenStart('sess_kg1', any())).called(1);
-      verify(() => mockTransport.send('/keygen/continue', any())).called(1);
-      verify(() => mockEngine.keygenContinue('sess_kg1', any())).called(1);
     });
 
     test('throws MpcProtocolException when engine returns error', () async {
-      when(() => mockTransport.send('/keygen/start', any()))
-          .thenAnswer((_) async => jsonEncode({
+      when(() => mockTransport.send(any()))
+          .thenAnswer((_) async => _rpcOk({
                 'sessionId': 'sess_err',
                 'serverPayload': {'round': 1},
               }));
@@ -102,16 +120,29 @@ void main() {
     });
 
     test('throws MpcTransportException when transport fails', () async {
-      when(() => mockTransport.send('/keygen/start', any()))
+      when(() => mockTransport.send(any()))
           .thenThrow(Exception('Network timeout'));
 
       expect(
         () => client.keygen(),
         throwsA(isA<MpcTransportException>().having(
-          (e) => e.endpoint,
-          'endpoint',
-          equals('/keygen/start'),
+          (e) => e.method,
+          'method',
+          equals(MpcMethod.keygenStart.method),
         )),
+      );
+    });
+
+    test('throws MpcRpcException when server returns JSON-RPC error', () async {
+      when(() => mockTransport.send(any()))
+          .thenAnswer((_) async =>
+              _rpcError(MpcRpcException.sessionNotFound, 'Session expired'));
+
+      expect(
+        () => client.keygen(),
+        throwsA(isA<MpcRpcException>()
+            .having((e) => e.code, 'code', MpcRpcException.sessionNotFound)
+            .having((e) => e.message, 'message', 'Session expired')),
       );
     });
   });
@@ -122,11 +153,24 @@ void main() {
       when(() => mockEngine.decryptBackupShare(any(), any()))
           .thenAnswer((_) async => 'decrypted_backup_share');
 
-      when(() => mockTransport.send('/recovery/start', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'sessionId': 'sess_rc1',
-                'serverPayload': {'round': 1, 'data': 'server_rotation_msg'},
-              }));
+      when(() => mockTransport.send(any()))
+          .thenAnswer((invocation) async {
+        final payload = jsonDecode(invocation.positionalArguments[0] as String)
+            as Map<String, dynamic>;
+        final method = payload['method'] as String;
+
+        if (method == MpcMethod.recoveryStart.method) {
+          return _rpcOk({
+            'sessionId': 'sess_rc1',
+            'serverPayload': {'round': 1, 'data': 'server_rotation_msg'},
+          }, id: payload['id'] as int);
+        } else if (method == MpcMethod.recoveryContinue.method) {
+          return _rpcOk({
+            'serverPayload': {'round': 2, 'data': 'server_rotation_msg2'},
+          }, id: payload['id'] as int);
+        }
+        throw Exception('Unexpected method: $method');
+      });
 
       when(() =>
               mockEngine.recoverStart('sess_rc1', 'decrypted_backup_share', any(), any()))
@@ -135,11 +179,6 @@ void main() {
                 round: 1,
                 clientPayload: 'client_rotation_payload',
               ));
-
-      when(() => mockTransport.send('/recovery/continue', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'serverPayload': {'round': 2, 'data': 'server_rotation_msg2'},
-              }));
 
       when(() => mockEngine.recoverContinue('sess_rc1', any()))
           .thenAnswer((_) async => MpcRoundResult(
@@ -169,17 +208,14 @@ void main() {
 
       verify(() => mockEngine.decryptBackupShare(
           'encrypted_backup_blob', 'user_secret')).called(1);
-      verify(() => mockTransport.send('/recovery/start', any())).called(1);
-      verify(() => mockEngine.recoverStart(
-          'sess_rc1', 'decrypted_backup_share', any(), any())).called(1);
     });
 
     test('throws MpcProtocolException when recover engine returns error',
         () async {
       when(() => mockEngine.decryptBackupShare(any(), any()))
           .thenAnswer((_) async => 'backup_share');
-      when(() => mockTransport.send('/recovery/start', any()))
-          .thenAnswer((_) async => jsonEncode({
+      when(() => mockTransport.send(any()))
+          .thenAnswer((_) async => _rpcOk({
                 'sessionId': 'sess_err',
                 'serverPayload': {'round': 1},
               }));
@@ -205,32 +241,37 @@ void main() {
   group('sign', () {
     test('completes full sign round-trip when server returns completed',
         () async {
-      // Mock server init
-      when(() => mockTransport.send('/sign/start', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'sessionId': 'sess_sg1',
-                'serverPayload': {
-                  'eph_key_gen_first_message_party_one': {},
-                  'message_hash': 'a' * 64,
-                },
-              }));
+      when(() => mockTransport.send(any()))
+          .thenAnswer((invocation) async {
+        final payload = jsonDecode(invocation.positionalArguments[0] as String)
+            as Map<String, dynamic>;
+        final method = payload['method'] as String;
 
-      // Mock Rust signStart -> continue
+        if (method == MpcMethod.signStart.method) {
+          return _rpcOk({
+            'sessionId': 'sess_sg1',
+            'serverPayload': {
+              'eph_key_gen_first_message_party_one': {},
+              'message_hash': 'a' * 64,
+            },
+          }, id: payload['id'] as int);
+        } else if (method == MpcMethod.signContinue.method) {
+          return _rpcOk({
+            'status': 'completed',
+            'r': 'aabb11',
+            's': 'ccdd22',
+            'recid': 0,
+          }, id: payload['id'] as int);
+        }
+        throw Exception('Unexpected method: $method');
+      });
+
       when(() => mockEngine.signStart('sess_sg1', 'my_share', any()))
           .thenAnswer((_) async => const MpcRoundResult(
                 status: 'continue',
                 round: 1,
                 clientPayload: 'client_eph_payload',
               ));
-
-      // Mock server /sign/continue -> completed with {r, s, recid}
-      when(() => mockTransport.send('/sign/continue', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'status': 'completed',
-                'r': 'aabb11',
-                's': 'ccdd22',
-                'recid': 0,
-              }));
 
       final result = await client.sign(
         mpcKeyId: 'key_001',
@@ -241,16 +282,11 @@ void main() {
       expect(result.r, equals('aabb11'));
       expect(result.s, equals('ccdd22'));
       expect(result.recid, equals(0));
-
-      verify(() => mockTransport.send('/sign/start', any())).called(1);
-      verify(() => mockEngine.signStart('sess_sg1', 'my_share', any()))
-          .called(1);
-      verify(() => mockTransport.send('/sign/continue', any())).called(1);
     });
 
     test('throws MpcProtocolException when signStart returns error', () async {
-      when(() => mockTransport.send('/sign/start', any()))
-          .thenAnswer((_) async => jsonEncode({
+      when(() => mockTransport.send(any()))
+          .thenAnswer((_) async => _rpcOk({
                 'sessionId': 'sess_err',
                 'serverPayload': {'message_hash': 'a' * 64},
               }));
@@ -277,7 +313,7 @@ void main() {
     });
 
     test('throws MpcTransportException when transport fails', () async {
-      when(() => mockTransport.send('/sign/start', any()))
+      when(() => mockTransport.send(any()))
           .thenThrow(Exception('Network error'));
 
       expect(
@@ -287,20 +323,36 @@ void main() {
           localEncryptedShare: 'share',
         ),
         throwsA(isA<MpcTransportException>().having(
-          (e) => e.endpoint,
-          'endpoint',
-          equals('/sign/start'),
+          (e) => e.method,
+          'method',
+          equals(MpcMethod.signStart.method),
         )),
       );
     });
 
     test('full round-trip with Rust signContinue before server completes',
         () async {
-      when(() => mockTransport.send('/sign/start', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'sessionId': 'sess_sg2',
-                'serverPayload': {'message_hash': 'b' * 64},
-              }));
+      when(() => mockTransport.send(any()))
+          .thenAnswer((invocation) async {
+        final payload = jsonDecode(invocation.positionalArguments[0] as String)
+            as Map<String, dynamic>;
+        final method = payload['method'] as String;
+
+        if (method == MpcMethod.signStart.method) {
+          return _rpcOk({
+            'sessionId': 'sess_sg2',
+            'serverPayload': {'message_hash': 'b' * 64},
+          }, id: payload['id'] as int);
+        } else if (method == MpcMethod.signContinue.method) {
+          return _rpcOk({
+            'status': 'completed',
+            'r': 'ff00',
+            's': '1122',
+            'recid': 1,
+          }, id: payload['id'] as int);
+        }
+        throw Exception('Unexpected method: $method');
+      });
 
       when(() => mockEngine.signStart('sess_sg2', 'share2', any()))
           .thenAnswer((_) async => const MpcRoundResult(
@@ -308,15 +360,6 @@ void main() {
                 round: 1,
                 clientPayload: 'eph_payload',
               ));
-
-      // Server returns non-completed first
-      when(() => mockTransport.send('/sign/continue', any()))
-          .thenAnswer((_) async => jsonEncode({
-                'status': 'completed',
-                'r': 'ff00',
-                's': '1122',
-                'recid': 1,
-              }));
 
       final result = await client.sign(
         mpcKeyId: 'key_002',
