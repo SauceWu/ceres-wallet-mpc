@@ -1,3 +1,6 @@
+export 'src/dto/mpc_dtos.dart';
+export 'src/transport/mpc_transport.dart';
+
 /// Lightweight package marker for the standalone Flutter MPC wallet project.
 class FlutterMpcWalletPackage {
   const FlutterMpcWalletPackage();
