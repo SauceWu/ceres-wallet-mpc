@@ -16,7 +16,8 @@ enum MpcEndpoint {
   recoveryStart('/recovery/start'),
   recoveryContinue('/recovery/continue'),
   signStart('/sign/start'),
-  signContinue('/sign/continue');
+  signContinue('/sign/continue'),
+  exportKey('/export/key');
 
   const MpcEndpoint(this.path);
 
@@ -235,14 +236,25 @@ class MpcClient {
 
   /// Export MPC wallet to a standard wallet by reconstructing the full private key.
   ///
-  /// The server must provide Party1's private share (requires strong authentication).
+  /// Requests Party1's private share from the server (requires strong authentication),
+  /// then combines it with the local Party2 share to reconstruct the full private key.
+  ///
   /// After export, the MPC key should be marked as exported and MPC operations disabled.
   ///
   /// Returns [ExportResult] with the full private key hex and address.
   Future<ExportResult> exportPrivateKey({
+    required String mpcKeyId,
     required String localEncryptedShare,
-    required String serverSharePrivate,
   }) async {
+    // 1. Request server to provide Party1's private share (requires strong auth)
+    final serverResponse = await _sendToServer(
+      MpcEndpoint.exportKey.path,
+      jsonEncode({'mpcKeyId': mpcKeyId}),
+    );
+    final serverData = _parseServerResponse(serverResponse);
+    final serverSharePrivate = jsonEncode(serverData['serverSharePrivate']);
+
+    // 2. Combine shares locally to reconstruct full private key
     final resultJson = await _engine.exportPrivateKey(
       localEncryptedShare,
       serverSharePrivate,
