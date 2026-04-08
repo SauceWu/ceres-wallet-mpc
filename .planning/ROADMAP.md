@@ -45,8 +45,8 @@ Success criteria:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Rust kms-secp256k1 依赖集成 + 真实 keygen/recovery 协议实现 + SessionMap + EVM 地址推导 + Rust 集成测试
-- [ ] 03-02-PLAN.md — FRB codegen + MpcClient 编排层 + 异常类型 + Dart 单元测试
+- [x] 03-01-PLAN.md — Rust kms-secp256k1 依赖集成 + 真实 keygen/recovery 协议实现 + SessionMap + EVM 地址推导 + Rust 集成测试
+- [x] 03-02-PLAN.md — FRB codegen + MpcClient 编排层 + 异常类型 + Dart 单元测试
 
 Success criteria:
 - 创建闭环成立
