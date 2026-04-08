@@ -30,10 +30,12 @@ Future<String> recoverStart({
   required String sessionId,
   required String backupShare,
   required String serverPayload,
+  required int currentRotationVersion,
 }) => RustLib.instance.api.crateApiMpcEngineRecoverStart(
   sessionId: sessionId,
   backupShare: backupShare,
   serverPayload: serverPayload,
+  currentRotationVersion: currentRotationVersion,
 );
 
 /// Recovery subsequent rounds.
@@ -70,9 +72,11 @@ Future<String> signContinue({
 Future<String> deriveBackupEnvelope({
   required String localEncryptedShare,
   required String userBackupSecret,
+  required String createdAt,
 }) => RustLib.instance.api.crateApiMpcEngineDeriveBackupEnvelope(
   localEncryptedShare: localEncryptedShare,
   userBackupSecret: userBackupSecret,
+  createdAt: createdAt,
 );
 
 /// Decrypt a backup envelope to recover the device backup share.

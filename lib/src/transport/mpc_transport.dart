@@ -1,8 +1,10 @@
-/// Transport abstraction injected by the host application (per D-02, D-05, D-07).
+/// Transport abstraction injected by the host application.
 ///
 /// The host fully controls HTTP headers, authentication, retries, and logging.
-/// The SDK only calls [send] during MPC round-trip orchestration.
+/// The SDK builds JSON-RPC 2.0 requests and passes the complete payload to [send].
+///
+/// Typically the host POSTs the payload to a single RPC endpoint (e.g. `/rpc`).
 abstract class MpcTransport {
-  /// Sends [payload] to the given [endpoint] and returns the server response.
-  Future<String> send(String endpoint, String payload);
+  /// Sends a JSON-RPC 2.0 [payload] to the server and returns the raw response.
+  Future<String> send(String payload);
 }
