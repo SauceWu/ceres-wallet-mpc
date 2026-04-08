@@ -1,7 +1,9 @@
-name: flutter_mpc_wallet
-description: "Flutter MPC wallet orchestration package for keygen, recovery, signing, and secure share management."
-version: 0.0.1
-homepage:
+name: ceres_mpc
+description: "Ceres MPC SDK — two-party ECDSA keygen, recovery, signing"
+version: 0.1.0
+homepage: https://github.com/SauceWu/ceres-mpc
+repository: https://github.com/SauceWu/ceres-mpc
+issue_tracker: https://github.com/SauceWu/ceres-mpc/issues
 
 environment:
   sdk: ^3.8.1
