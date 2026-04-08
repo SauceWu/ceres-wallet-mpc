@@ -20,10 +20,16 @@ Success criteria:
 - Rust wrapper 与 Dart DTO 边界稳定
 
 #### Phase 2: Share Storage and DTO Boundary
-- 建立 `MpcShareStore`
-- 固化 `localEncryptedShare` / backup envelope DTO
-- 建立 redaction 规则
-- 明确 Drift metadata 边界
+
+**Goal:** 固化 MPC share 的 DTO 交付合约，新增 BackupEnvelope DTO 和 Rust 侧 backup envelope 计算 stub，建立 DTO redaction 规则防止 share 泄漏。
+
+**Requirements:** [MPC-04, MPC-05, MPC-06]
+
+**Plans:** 2 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Rust BackupEnvelope struct + derive/decrypt stub 函数 + Rust 测试 + FRB codegen
+- [ ] 02-02-PLAN.md — Dart BackupEnvelope DTO + toString redaction + MpcEngine wrapper + Dart 测试
 
 Success criteria:
 - live share 进入 secure storage
@@ -59,5 +65,5 @@ Success criteria:
 - rotation 逻辑稳定
 
 ### Current Focus
-- 当前优先进入 Phase 1
+- 当前优先进入 Phase 2
 - 不先碰业务 UI，不先碰多链，不先碰原钱包 SDK 主项目耦合
