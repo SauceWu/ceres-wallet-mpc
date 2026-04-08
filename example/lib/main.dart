@@ -104,7 +104,7 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
     } on MpcProtocolException catch (e) {
       _log('Protocol error: ${e.message} (round: ${e.round})');
     } on MpcTransportException catch (e) {
-      _log('Transport error: ${e.message} (endpoint: ${e.endpoint})');
+      _log('Transport error: ${e.message} (method: ${e.method})');
     }
   }
 
@@ -265,7 +265,7 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
     _log('    log("Protocol failed at round \${e.round}");');
     _log('  } on MpcTransportException catch (e) {');
     _log('    // Network error: retry with backoff');
-    _log('    log("Network failed: \${e.endpoint}");');
+    _log('    log("Network failed: \${e.method}");');
     _log('  }');
   }
 
