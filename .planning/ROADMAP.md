@@ -258,7 +258,10 @@ Plans:
   3. 并发发出的多个 `send()` 请求通过 JSON-RPC `id` 字段各自匹配响应，不会串行阻塞
   4. 连接或响应超时时，`send()` 抛出明确的异常类型（不挂起、不静默失败）
   5. `HttpMpcTransport`（原有 HTTP 实现）无任何代码变动，可与 WebSocket transport 并存使用
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 14-01-PLAN.md — WebSocketMpcTransport 实现 + web_socket_channel 依赖 + 单元测试（send 匹配、并发、重连、超时）
 
 ### Phase 15: Example App 集成与文档
 **Goal**: 开发者可以通过 example app 和 README 快速理解并切换 HTTP / WebSocket 两种 transport
