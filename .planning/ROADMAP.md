@@ -109,7 +109,7 @@ Success criteria:
 
 - [ ] **Phase 7: 依赖替换与本地双平台编译** - 用 dkls23-ll 彻底替换 kms-secp256k1/curv-kzen/GMP，验证 iOS + Android 本地 cargo build 通过
 - [x] **Phase 8: Wire Format 与安全类型定义** - 定义 DKG/DSG/Rotation 各轮 JSON wire format 结构，引入 MessageDigest newtype 防止原始字节误传 (completed 2026-04-09)
-- [ ] **Phase 9: DKG Keygen 4 轮协议** - 基于 dkls23-ll 实现完整 4 轮 keygen，产出 Keyshare + EVM 地址，建立 Rust 双方模拟测试框架
+- [x] **Phase 9: DKG Keygen 4 轮协议** - 基于 dkls23-ll 实现完整 4 轮 keygen，产出 Keyshare + EVM 地址，建立 Rust 双方模拟测试框架 (completed 2026-04-09)
 - [ ] **Phase 10: DSG Signing 4 轮协议** - 基于 dkls23-ll 实现 4 轮 signing，含 recid 计算，强制 PreSignature 一次性销毁
 - [ ] **Phase 11: Key Rotation/Recovery 4 轮协议** - 基于 dkls23-ll 实现 4 轮 rotation/recovery，建立 Session TTL 超时驱逐机制
 - [ ] **Phase 12: Backup Envelope 与 Key Export** - 适配 Keyshare 序列化格式的 backup envelope，实现 s_i 合并私钥重建
@@ -159,7 +159,7 @@ Plans:
 
 Plans:
 - [x] 09-01-PLAN.md — Cargo 依赖 + WireEnvelope step 字段 + KeygenSession 实体 + keygen_start/continue 状态机 (PROTO-01)
-- [ ] 09-02-PLAN.md — DKG 双方模拟集成测试框架 + EVM 地址推导 + Keyshare 序列化验证 (PROTO-01, REG-01)
+- [x] 09-02-PLAN.md — DKG 双方模拟集成测试框架 + EVM 地址推导 + Keyshare 序列化验证 (PROTO-01, REG-01)
 
 ### Phase 10: DSG Signing 4 轮协议
 **Goal**: 基于 dkls23-ll 的 4 轮 DSG 协议完整运行，签名结果包含 r、s、recid，PreSignature 在使用后被强制销毁
@@ -213,7 +213,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
-| 9. DKG Keygen 4 轮协议 | 1/2 | In Progress|  |
+| 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 10. DSG Signing 4 轮协议 | 0/? | Not started | - |
 | 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |

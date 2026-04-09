@@ -17,7 +17,7 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 
 ### Protocol
 
-- [ ] **PROTO-01**: 基于 dkls23-ll DKG 实现 4 轮 keygen 协议，产出 Keyshare + EVM 地址
+- [x] **PROTO-01**: 基于 dkls23-ll DKG 实现 4 轮 keygen 协议，产出 Keyshare + EVM 地址
 - [ ] **PROTO-02**: 基于 dkls23-ll DSG 实现 4 轮 signing 协议，含 recid 计算
 - [ ] **PROTO-03**: 基于 dkls23-ll key_rotation 实现 4 轮 rotation/recovery 协议
 
@@ -34,7 +34,7 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 
 ### Regression
 
-- [ ] **REG-01**: 每个协议实现必须有 Rust 本地双方模拟测试
+- [x] **REG-01**: 每个协议实现必须有 Rust 本地双方模拟测试
 - [ ] **REG-02**: 本地编译 + CI 编译双重门控
 
 ## Future Requirements
@@ -72,7 +72,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-03 | Phase 13 | Pending |
 | INFRA-04 | Phase 8 | Complete |
 | INFRA-05 | Phase 13 | Pending |
-| PROTO-01 | Phase 9 | Pending |
+| PROTO-01 | Phase 9 | Complete |
 | PROTO-02 | Phase 10 | Pending |
 | PROTO-03 | Phase 11 | Pending |
 | AUX-01 | Phase 12 | Pending |
@@ -80,7 +80,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEC-01 | Phase 10 | Pending |
 | SEC-02 | Phase 11 | Pending |
 | SEC-03 | Phase 8 | Complete |
-| REG-01 | Phase 9 | Pending |
+| REG-01 | Phase 9 | Complete |
 | REG-02 | Phase 13 | Pending |
 
 **Coverage:**
