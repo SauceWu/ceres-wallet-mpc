@@ -113,7 +113,7 @@ Success criteria:
 - [x] **Phase 10: DSG Signing 4 轮协议** - 基于 dkls23-ll 实现 4 轮 signing，含 recid 计算，强制 PreSignature 一次性销毁 (completed 2026-04-09)
 - [x] **Phase 11: Key Rotation/Recovery 4 轮协议** - 基于 dkls23-ll 实现 4 轮 rotation/recovery，建立 Session TTL 超时驱逐机制 (completed 2026-04-09)
 - [x] **Phase 12: Backup Envelope 与 Key Export** - 适配 Keyshare 序列化格式的 backup envelope，实现 s_i 合并私钥重建 (completed 2026-04-09)
-- [ ] **Phase 13: FRB Codegen + Dart 层适配 + CI 门控** - 重新生成 FRB 绑定，Dart MpcEngine 适配 4 轮模型，配置 CI 交叉编译产物发布
+- [x] **Phase 13: FRB Codegen + Dart 层适配 + CI 门控** - 重新生成 FRB 绑定，Dart MpcEngine 适配 4 轮模型，配置 CI 交叉编译产物发布 (completed 2026-04-09)
 
 ## Phase Details
 
@@ -220,9 +220,22 @@ Plans:
 
 Plans:
 - [x] 13-01-PLAN.md — FRB codegen 重新生成 + Dart bridge/client signStart 4 参数适配 + 测试更新 (INFRA-05)
-- [ ] 13-02-PLAN.md — CI 门控工作流 ci.yml 新建 + precompile.yml GMP 清理 + 人工验证 (INFRA-03, REG-02)
+- [x] 13-02-PLAN.md — CI 门控工作流 ci.yml 新建 + precompile.yml GMP 清理 + 人工验证 (INFRA-03, REG-02)
 
 **UI hint**: yes
+
+### Phase 13.1: sl-dkls23 迁移 — 将 dkls23-ll 替换为 sl-dkls23 高层 async API，引入 ChannelRelay 桥接 HTTP start/continue 模式，适配 Keyshare 二进制格式，使用内置 key_export::combine_shares 和 key_refresh (INSERTED)
+
+**Goal:** 将 dkls23-ll 低层同步 API 完全替换为 sl-dkls23 高层 async API，通过 ChannelRelay 桥接 FFI start/continue 模式，适配 Keyshare bytes 序列化格式，使用内置 combine_shares 和 key_refresh 替换手动实现
+**Requirements**: INFRA-01, INFRA-02, INFRA-05, PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01, SEC-02, SEC-03, REG-01, REG-02
+**Depends on:** Phase 13
+**Plans:** 4 plans
+
+Plans:
+- [ ] 13.1-01-PLAN.md — Cargo.toml 依赖替换 + runtime.rs OnceCell Runtime + relay.rs ChannelRelay + session.rs 重写 (INFRA-01, PROTO-01, PROTO-02, PROTO-03)
+- [ ] 13.1-02-PLAN.md — mpc_engine.rs 全面重写：keygen/sign/recover/backup/export 适配 sl-dkls23 async API (PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01, SEC-02, SEC-03)
+- [ ] 13.1-03-PLAN.md — 集成测试全面重写：test_dkg/test_dsg/test_rotation/test_backup_export 适配 sl-dkls23 (REG-01, PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01)
+- [ ] 13.1-04-PLAN.md — FRB codegen 重新生成 + iOS/Android 交叉编译验证 + flutter analyze + 人工验证 (INFRA-02, INFRA-05, REG-02)
 
 ## Progress Table
 
@@ -234,4 +247,5 @@ Plans:
 | 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
 | 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
 | 12. Backup Envelope 与 Key Export | 2/2 | Complete    | 2026-04-09 |
-| 13. FRB Codegen + Dart 层适配 + CI 门控 | 1/2 | In Progress|  |
+| 13. FRB Codegen + Dart 层适配 + CI 门控 | 2/2 | Complete    | 2026-04-09 |
+| 13.1. sl-dkls23 迁移 | 0/4 | Planning complete | - |
