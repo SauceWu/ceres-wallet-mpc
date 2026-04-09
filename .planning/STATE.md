@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Ready to execute
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-04-09T04:18:32.796Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 11-02-PLAN.md
+last_updated: "2026-04-09T04:23:30.458Z"
 progress:
   total_phases: 13
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 ## Current Position
@@ -41,6 +41,8 @@ Next: Phase 9
 - [Phase 11]: No finish_key_rotation in c348be1 — handle_msg4 directly returns new Keyshare with inherited public_key
 - [Phase 11]: TTL eviction uses single lock() scope for check+remove to prevent session leak (SEC-02)
 - [Phase 11]: current_rotation_version stored in RecoverySession, only incremented in Round 4 RecoveryCompletedPayload
+- [Phase 11]: handle_msg3 returns KeygenMsg4 directly (not Vec) — must not index with [0] in rotation tests
+- [Phase 11]: test_rotation_version_increments uses session-layer simulation without full API WireEnvelope — simpler and equally valid
 
 ## Performance Metrics
 
@@ -53,8 +55,9 @@ Next: Phase 9
 | Phase 10 P01 | 225s | 2 tasks | 3 files |
 | Phase 10 P02 | 208s | 1 tasks | 2 files |
 | Phase 11 P01 | 166s | 2 tasks | 2 files |
+| Phase 11 P02 | 233s | 1 tasks | 1 files |
 
 ## Last Session
 
-Stopped at: Completed 11-01-PLAN.md
+Stopped at: Completed 11-02-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z

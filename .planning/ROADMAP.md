@@ -111,7 +111,7 @@ Success criteria:
 - [x] **Phase 8: Wire Format 与安全类型定义** - 定义 DKG/DSG/Rotation 各轮 JSON wire format 结构，引入 MessageDigest newtype 防止原始字节误传 (completed 2026-04-09)
 - [x] **Phase 9: DKG Keygen 4 轮协议** - 基于 dkls23-ll 实现完整 4 轮 keygen，产出 Keyshare + EVM 地址，建立 Rust 双方模拟测试框架 (completed 2026-04-09)
 - [x] **Phase 10: DSG Signing 4 轮协议** - 基于 dkls23-ll 实现 4 轮 signing，含 recid 计算，强制 PreSignature 一次性销毁 (completed 2026-04-09)
-- [ ] **Phase 11: Key Rotation/Recovery 4 轮协议** - 基于 dkls23-ll 实现 4 轮 rotation/recovery，建立 Session TTL 超时驱逐机制
+- [x] **Phase 11: Key Rotation/Recovery 4 轮协议** - 基于 dkls23-ll 实现 4 轮 rotation/recovery，建立 Session TTL 超时驱逐机制 (completed 2026-04-09)
 - [ ] **Phase 12: Backup Envelope 与 Key Export** - 适配 Keyshare 序列化格式的 backup envelope，实现 s_i 合并私钥重建
 - [ ] **Phase 13: FRB Codegen + Dart 层适配 + CI 门控** - 重新生成 FRB 绑定，Dart MpcEngine 适配 4 轮模型，配置 CI 交叉编译产物发布
 
@@ -189,7 +189,7 @@ Plans:
 
 Plans:
 - [x] 11-01-PLAN.md — RecoverySession 实体 + TTL 常量 + recover_start/recover_continue 4 轮状态机 (PROTO-03, SEC-02)
-- [ ] 11-02-PLAN.md — Rotation 双方模拟集成测试 + 签名验证 + rotationVersion 递增 + TTL 驱逐测试 (PROTO-03, SEC-02)
+- [x] 11-02-PLAN.md — Rotation 双方模拟集成测试 + 签名验证 + rotationVersion 递增 + TTL 驱逐测试 (PROTO-03, SEC-02)
 
 ### Phase 12: Backup Envelope 与 Key Export
 **Goal**: Backup envelope 完全适配 Keyshare 新序列化格式，Key export 私钥重建路径可验证
@@ -223,6 +223,6 @@ Plans:
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
-| 11. Key Rotation/Recovery 4 轮协议 | 1/2 | In Progress|  |
+| 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |

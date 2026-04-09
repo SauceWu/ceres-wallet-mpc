@@ -18,8 +18,8 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 ### Protocol
 
 - [x] **PROTO-01**: 基于 dkls23-ll DKG 实现 4 轮 keygen 协议，产出 Keyshare + EVM 地址
-- [ ] **PROTO-02**: 基于 dkls23-ll DSG 实现 4 轮 signing 协议，含 recid 计算
-- [ ] **PROTO-03**: 基于 dkls23-ll key_rotation 实现 4 轮 rotation/recovery 协议
+- [x] **PROTO-02**: 基于 dkls23-ll DSG 实现 4 轮 signing 协议，含 recid 计算
+- [x] **PROTO-03**: 基于 dkls23-ll key_rotation 实现 4 轮 rotation/recovery 协议
 
 ### Auxiliary
 
@@ -28,8 +28,8 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SEC-01**: PreSignature 一次性使用强制销毁
-- [ ] **SEC-02**: Session TTL 超时驱逐
+- [x] **SEC-01**: PreSignature 一次性使用强制销毁
+- [x] **SEC-02**: Session TTL 超时驱逐
 - [x] **SEC-03**: MessageDigest newtype 防止 raw bytes 误传
 
 ### Regression
@@ -73,12 +73,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-04 | Phase 8 | Complete |
 | INFRA-05 | Phase 13 | Pending |
 | PROTO-01 | Phase 9 | Complete |
-| PROTO-02 | Phase 10 | Pending |
-| PROTO-03 | Phase 11 | Pending |
+| PROTO-02 | Phase 10 | Complete |
+| PROTO-03 | Phase 11 | Complete |
 | AUX-01 | Phase 12 | Pending |
 | AUX-02 | Phase 12 | Pending |
-| SEC-01 | Phase 10 | Pending |
-| SEC-02 | Phase 11 | Pending |
+| SEC-01 | Phase 10 | Complete |
+| SEC-02 | Phase 11 | Complete |
 | SEC-03 | Phase 8 | Complete |
 | REG-01 | Phase 9 | Complete |
 | REG-02 | Phase 13 | Pending |
