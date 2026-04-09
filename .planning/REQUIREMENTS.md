@@ -1,41 +1,25 @@
 # Requirements: Flutter MPC Wallet
 
 **Defined:** 2026-04-09
-**Core Value:** 将密码学底座从 kms-secp256k1 全面切换至 dkls23-ll，修复 iOS 编译问题，保持 share 模型和 Dart API 稳定
+**Core Value:** 新增 WebSocket 传输方式，与 HTTP 并存，减少 4 轮协议通信延迟
 
-## v2.0 Requirements
+## v3.0 Requirements
 
-Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
+Requirements for milestone v3.0 Transport Optimization. Each maps to roadmap phases.
 
-### Infrastructure
+### Transport
 
-- [x] **INFRA-01**: Rust 依赖从 kms-secp256k1/curv-kzen/GMP 替换为 dkls23-ll，删除 build.rs 和 vendor/gmp/
-- [x] **INFRA-02**: 本地 cargo build 通过 iOS（aarch64-apple-ios）+ Android（aarch64-linux-android）target
-- [ ] **INFRA-03**: GitHub Actions CI 交叉编译 iOS XCFramework + Android .so 产物发布
-- [x] **INFRA-04**: 定义 DKG/DSG/Rotation 各轮 wire format JSON 结构
-- [x] **INFRA-05**: flutter_rust_bridge codegen 重新生成，Dart MpcEngine 适配 4 轮模型
+- [ ] **TRANS-01**: 新增 WebSocket transport 实现，通过 `web_socket_channel` 建立持久连接
+- [ ] **TRANS-02**: WebSocket 自动连接管理（首次 send 时连接，断线自动重连）
+- [ ] **TRANS-03**: 请求-响应匹配（通过 JSON-RPC `id` 字段，支持并发 session）
+- [ ] **TRANS-04**: 连接超时和错误处理（超时抛出异常，WS 关闭码处理）
+- [ ] **TRANS-05**: HTTP transport 保持不变，两种模式并存
 
-### Protocol
+### Integration
 
-- [x] **PROTO-01**: 基于 dkls23-ll DKG 实现 4 轮 keygen 协议，产出 Keyshare + EVM 地址
-- [x] **PROTO-02**: 基于 dkls23-ll DSG 实现 4 轮 signing 协议，含 recid 计算
-- [x] **PROTO-03**: 基于 dkls23-ll key_rotation 实现 4 轮 rotation/recovery 协议
-
-### Auxiliary
-
-- [x] **AUX-01**: Backup Envelope 适配 Keyshare 序列化格式（AES-256-GCM 逻辑不变）
-- [x] **AUX-02**: Key Export 私钥重建（s_i 合并，Lagrange 插值）
-
-### Security
-
-- [x] **SEC-01**: PreSignature 一次性使用强制销毁
-- [x] **SEC-02**: Session TTL 超时驱逐
-- [x] **SEC-03**: MessageDigest newtype 防止 raw bytes 误传
-
-### Regression
-
-- [x] **REG-01**: 每个协议实现必须有 Rust 本地双方模拟测试
-- [x] **REG-02**: 本地编译 + CI 编译双重门控
+- [ ] **INTEG-01**: Example app 展示 HTTP 和 WebSocket 两种 transport 用法
+- [ ] **INTEG-02**: README/README_CN 增加 WebSocket transport 使用说明
+- [ ] **INTEG-03**: flutter analyze 无 error，flutter test 全部通过
 
 ## Future Requirements
 
@@ -55,11 +39,10 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| 旧 kms-secp256k1 share 向后兼容 | 全面切换，不做兼容 |
+| Rust 层改动 | 纯 Dart 层工作，MpcTransport 接口不变 |
+| 服务端 WebSocket 实现 | SDK 只提供客户端 transport，服务端由用户实现 |
+| HTTP transport 修改 | 保持不动，新增 WS 并存 |
 | 多链支持 | EVM 闭环后再考虑 |
-| 业务 UI | 底层密码学优先 |
-| dsg_ot_variant 签名变体 | v1.2.0 新增，与标准 dsg 不兼容，需服务端额外适配 |
-| Trail of Bits 审计完整复审 | 基础安全加固本里程碑做，完整复审推迟 |
 
 ## Traceability
 
@@ -67,27 +50,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 7 | Complete |
-| INFRA-02 | Phase 7 | Complete |
-| INFRA-03 | Phase 13 | Pending |
-| INFRA-04 | Phase 8 | Complete |
-| INFRA-05 | Phase 13 | Complete |
-| PROTO-01 | Phase 9 | Complete |
-| PROTO-02 | Phase 10 | Complete |
-| PROTO-03 | Phase 11 | Complete |
-| AUX-01 | Phase 12 | Complete |
-| AUX-02 | Phase 12 | Complete |
-| SEC-01 | Phase 10 | Complete |
-| SEC-02 | Phase 11 | Complete |
-| SEC-03 | Phase 8 | Complete |
-| REG-01 | Phase 9 | Complete |
-| REG-02 | Phase 13 | Complete |
+| TRANS-01 | TBD | Pending |
+| TRANS-02 | TBD | Pending |
+| TRANS-03 | TBD | Pending |
+| TRANS-04 | TBD | Pending |
+| TRANS-05 | TBD | Pending |
+| INTEG-01 | TBD | Pending |
+| INTEG-02 | TBD | Pending |
+| INTEG-03 | TBD | Pending |
 
 **Coverage:**
-- v2.0 requirements: 15 total
-- Mapped to phases: 15
-- Unmapped: 0 ✓
+- v3.0 requirements: 8 total
+- Mapped to phases: 0
+- Unmapped: 8
 
 ---
 *Requirements defined: 2026-04-09*
-*Last updated: 2026-04-08 — traceability filled after roadmap v2.0 creation*
