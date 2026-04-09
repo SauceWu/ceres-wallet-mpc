@@ -1,6 +1,6 @@
 use crate::api::types::{
     BackupEnvelope, DecryptBackupResult, KeygenCompletedPayload, MessageDigest, MpcRoundResult,
-    ProtocolType, SignCompletedPayload, WireEnvelope,
+    ProtocolType, RecoveryCompletedPayload, SignCompletedPayload, WireEnvelope,
 };
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -17,7 +17,11 @@ use k256::elliptic_curve::sec1::ToEncodedPoint;
 use sha2::Sha256;
 use std::str::FromStr;
 
-use crate::session::{KeygenSession, SignSession, KEYGEN_SESSIONS, SIGN_SESSIONS};
+use crate::session::{
+    KeygenSession, RecoverySession, SignSession, KEYGEN_SESSIONS, RECOVERY_SESSIONS, SESSION_TTL,
+    SIGN_SESSIONS,
+};
+use std::time::Instant;
 
 // ── CBOR 编解码助手 ───────────────────────────────────────────────────
 
@@ -363,11 +367,312 @@ pub fn recover_start(
     server_payload: String,
     current_rotation_version: i32,
 ) -> Result<String, String> {
-    Err("not implemented: recovery uses dkls23-ll, see Phase 11".to_string())
+    // 1. 解析服务端 Round 1 信封，验证 from_id == 1（T-11-01）
+    let server_env: WireEnvelope = serde_json::from_str(&server_payload)
+        .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
+    if server_env.from_id != 1 {
+        return Err(format!(
+            "expected from_id=1 (server), got from_id={}",
+            server_env.from_id
+        ));
+    }
+
+    // 2. 反序列化旧 Keyshare（来自 decrypt_backup_share 结果，已解密的 JSON）
+    let old_keyshare: dkls23_ll::dkg::Keyshare = serde_json::from_str(&backup_share)
+        .map_err(|e| format!("invalid backup share JSON: {e}"))?;
+
+    // 3. 初始化 rotation State — State::key_rotation 返回 Result，必须解包
+    let mut rng = rand::thread_rng();
+    let mut state = DkgState::key_rotation(&old_keyshare, &mut rng)
+        .map_err(|e| e.to_string())?;
+
+    // 4. 生成本方 msg1（驱动协议状态机，不需要发送给服务端）
+    let _my_msg1 = state.generate_msg1();
+
+    // 5. 解码服务端 KeygenMsg1
+    let server_msg1: dkls23_ll::dkg::KeygenMsg1 = decode_cbor_base64(&server_env.payload)?;
+
+    // 6. handle_msg1 → Vec<KeygenMsg2>
+    let msg2_vec = state
+        .handle_msg1(&mut rng, vec![server_msg1])
+        .map_err(|e| e.to_string())?;
+
+    if msg2_vec.is_empty() {
+        return Err("handle_msg1 returned empty Vec<KeygenMsg2>".to_string());
+    }
+
+    // 7. 序列化 msg2[0]，包装为 WireEnvelope(protocol=Rotation, round=2, P2P to=1)
+    let msg2_payload = encode_cbor_base64(&msg2_vec[0])?;
+    let env = WireEnvelope::new(
+        session_id.clone(),
+        ProtocolType::Rotation,
+        2,
+        0,
+        Some(1),
+        msg2_payload,
+        None,
+    );
+    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+    // 8. 存储 RecoverySession（round=2，TTL 从此刻起算）
+    {
+        let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
+        sessions.insert(
+            session_id.clone(),
+            RecoverySession {
+                state,
+                round: 2,
+                created_at: Instant::now(),
+                my_commitment_2: None,
+                server_commitment_2: None,
+                pending_msg3: None,
+                current_rotation_version,
+            },
+        );
+    }
+
+    // 9. 返回 MpcRoundResult
+    let result = MpcRoundResult {
+        status: "in_progress".to_string(),
+        round: 2,
+        client_payload: Some(env_json),
+        error_message: None,
+    };
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 pub fn recover_continue(session_id: String, server_payload: String) -> Result<String, String> {
-    Err("not implemented: recovery uses dkls23-ll, see Phase 11".to_string())
+    // 解析服务端信封，验证 from_id == 1（T-11-01）
+    let server_env: WireEnvelope = serde_json::from_str(&server_payload)
+        .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
+    if server_env.from_id != 1 {
+        return Err(format!(
+            "expected from_id=1 (server), got from_id={}",
+            server_env.from_id
+        ));
+    }
+
+    let mut rng = rand::thread_rng();
+
+    // SEC-02：TTL 检查 — 在单次 lock() 持有期间同时检查并驱逐过期 session
+    let current_round = {
+        let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
+        match sessions.get(&session_id) {
+            None => return Err(format!("recovery session not found: {session_id}")),
+            Some(s) if s.created_at.elapsed() > SESSION_TTL => {
+                sessions.remove(&session_id);
+                return Err(format!("session expired (TTL): {session_id}"));
+            }
+            Some(s) => s.round,
+        }
+    };
+
+    match current_round {
+        // ── Round 2：服务端发来 KeygenMsg2 ──────────────────────────────
+        2 => {
+            let server_msg2: dkls23_ll::dkg::KeygenMsg2 =
+                decode_cbor_base64(&server_env.payload)?;
+
+            let commitment_payload = {
+                let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
+                let session = sessions
+                    .get_mut(&session_id)
+                    .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
+
+                // handle_msg2 -> Vec<KeygenMsg3>
+                let msg3_vec = session
+                    .state
+                    .handle_msg2(&mut rng, vec![server_msg2])
+                    .map_err(|e| e.to_string())?;
+
+                if msg3_vec.is_empty() {
+                    return Err("handle_msg2 returned empty Vec<KeygenMsg3>".to_string());
+                }
+
+                // calculate_commitment_2（handle_msg2 完成后立即调用）
+                let my_c2 = session.state.calculate_commitment_2();
+                session.my_commitment_2 = Some(my_c2);
+
+                // 缓存 KeygenMsg3（CBOR bytes）供 Round 3b 使用
+                let mut msg3_buf = Vec::new();
+                ciborium::into_writer(&msg3_vec[0], &mut msg3_buf)
+                    .map_err(|e| format!("cbor encode msg3: {e}"))?;
+                session.pending_msg3 = Some(msg3_buf);
+                session.round = 3;
+
+                // 编码 commitment_2 为 cbor_base64
+                encode_cbor_base64(&my_c2)?
+            };
+
+            // 返回 commitment_2 广播信封（step="commitment", protocol=Rotation）
+            let env = WireEnvelope::new(
+                session_id.clone(),
+                ProtocolType::Rotation,
+                3,
+                0,
+                None,
+                commitment_payload,
+                Some("commitment".to_string()),
+            );
+            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+            let result = MpcRoundResult {
+                status: "in_progress".to_string(),
+                round: 3,
+                client_payload: Some(env_json),
+                error_message: None,
+            };
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        // ── Round 3（step="commitment"）：服务端发来 commitment_2 ────────
+        3 if server_env.step.as_deref() == Some("commitment") => {
+            let server_c2: [u8; 32] = decode_cbor_base64(&server_env.payload)?;
+
+            // 缓存 server commitment_2，取出 pending_msg3
+            let pending_msg3_b64 = {
+                let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
+                let session = sessions
+                    .get_mut(&session_id)
+                    .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
+
+                session.server_commitment_2 = Some(server_c2);
+
+                // pending_msg3 是原始 CBOR bytes，base64 编码后放入 envelope
+                let msg3_bytes = session
+                    .pending_msg3
+                    .as_ref()
+                    .ok_or("pending_msg3 not set")?;
+                BASE64_STANDARD.encode(msg3_bytes)
+            };
+
+            // 包装 KeygenMsg3 P2P 信封（step="msg3", protocol=Rotation）
+            let env = WireEnvelope::new(
+                session_id.clone(),
+                ProtocolType::Rotation,
+                3,
+                0,
+                Some(1),
+                pending_msg3_b64,
+                Some("msg3".to_string()),
+            );
+            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+            let result = MpcRoundResult {
+                status: "in_progress".to_string(),
+                round: 3,
+                client_payload: Some(env_json),
+                error_message: None,
+            };
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        // ── Round 3（step="msg3"）：服务端发来 KeygenMsg3 ────────────────
+        3 if server_env.step.as_deref() == Some("msg3") => {
+            let server_msg3: dkls23_ll::dkg::KeygenMsg3 =
+                decode_cbor_base64(&server_env.payload)?;
+
+            let msg4_payload = {
+                let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
+                let session = sessions
+                    .get_mut(&session_id)
+                    .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
+
+                let my_c2 = session
+                    .my_commitment_2
+                    .ok_or("my_commitment_2 not set")?;
+                let server_c2 = session
+                    .server_commitment_2
+                    .ok_or("server_commitment_2 not set")?;
+
+                // commitment_2_list 索引 == party_id
+                let commitment_2_list: Vec<[u8; 32]> = vec![my_c2, server_c2];
+
+                let msg4 = session
+                    .state
+                    .handle_msg3(&mut rng, vec![server_msg3], &commitment_2_list)
+                    .map_err(|e| e.to_string())?;
+
+                session.round = 4;
+                encode_cbor_base64(&msg4)?
+            };
+
+            // 返回 KeygenMsg4 broadcast 信封（protocol=Rotation）
+            let env = WireEnvelope::new(
+                session_id.clone(),
+                ProtocolType::Rotation,
+                4,
+                0,
+                None,
+                msg4_payload,
+                None,
+            );
+            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+            let result = MpcRoundResult {
+                status: "in_progress".to_string(),
+                round: 4,
+                client_payload: Some(env_json),
+                error_message: None,
+            };
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        // ── Round 4：服务端发来 KeygenMsg4，完成 Rotation ─────────────────
+        4 => {
+            let server_msg4: dkls23_ll::dkg::KeygenMsg4 =
+                decode_cbor_base64(&server_env.payload)?;
+
+            // 取出 session 所有权（handle_msg4 消耗 State）
+            let mut session = {
+                let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
+                sessions
+                    .remove(&session_id)
+                    .ok_or_else(|| format!("recovery session not found: {session_id}"))?
+            };
+
+            // handle_msg4 -> 新 Keyshare（public_key 内部继承自旧 Keyshare，锁定版本 c348be1 直接返回）
+            let new_keyshare = session
+                .state
+                .handle_msg4(vec![server_msg4])
+                .map_err(|e| e.to_string())?;
+
+            // 提取公钥（65 字节非压缩）
+            let encoded = new_keyshare.public_key.to_encoded_point(false);
+            let pubkey_bytes = encoded.as_bytes();
+
+            // 推导 EVM 地址
+            let evm_address = crate::api::address::derive_evm_address(pubkey_bytes)?;
+
+            // 序列化新 Keyshare 为 JSON 本地存储
+            let local_encrypted_share =
+                serde_json::to_string(&new_keyshare).map_err(|e| e.to_string())?;
+
+            // 构造 RecoveryCompletedPayload，rotation_version 递增
+            let completed = RecoveryCompletedPayload {
+                mpc_key_id: session_id.clone(),
+                address: evm_address,
+                public_key: hex::encode(pubkey_bytes),
+                rotation_version: session.current_rotation_version + 1,
+                local_encrypted_share,
+            };
+            let completed_json =
+                serde_json::to_string(&completed).map_err(|e| e.to_string())?;
+
+            let result = MpcRoundResult {
+                status: "completed".to_string(),
+                round: 4,
+                client_payload: Some(completed_json),
+                error_message: None,
+            };
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        _ => Err(format!(
+            "unexpected recovery session state: round={current_round}, step={:?}",
+            server_env.step
+        )),
+    }
 }
 
 // ── Signing ──────────────────────────────────────────────────────────
