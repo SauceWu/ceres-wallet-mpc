@@ -40,3 +40,6 @@ ios/Flutter/Generated.xcconfig
 ios/Flutter/ephemeral/
 ios/Runner/GeneratedPluginRegistrant.*
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# Rust cross-compilation (contains machine-specific absolute paths — CI uses its own config)
+rust/.cargo/config.toml
