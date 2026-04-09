@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
 status: Ready to execute
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-04-09T05:11:57.986Z"
+stopped_at: Completed 13.1-01-PLAN.md
+last_updated: "2026-04-09T08:15:20.280Z"
 progress:
-  total_phases: 13
-  completed_phases: 6
-  total_plans: 14
-  completed_plans: 13
-  percent: 93
+  total_phases: 14
+  completed_phases: 7
+  total_plans: 18
+  completed_plans: 15
+  percent: 83
 ---
 
 ## Current Position
 
-Phase: 13 (FRB Codegen + Dart 层适配 + CI 门控) — EXECUTING
-Plan: 2 of 2
+Phase: 13.1 (sl-dkls23 迁移) — EXECUTING
+Plan: 2 of 4
 Completed Plan: 08-02 (WireEnvelope JSON 信封格式与冻结规范)
 Next: Phase 9
 
@@ -48,6 +48,13 @@ Next: Phase 9
 - [Phase 12]: EXPORTED_KEYS keyed by compressed public key hex in session.rs — consistent guard pattern with SIGN_SESSIONS
 - [Phase 12]: Lagrange 2-of-2 implemented manually with k256::Scalar — no sl_mpc_mate dependency needed for rank=0
 - [Phase 13]: FRB codegen 重新生成时同步产生了 lib.dart 和 api/types.dart（MessageDigest、WireEnvelope 的 Dart 绑定），纳入版本控制
+- [Phase 13.1]: sl-oblivious pinned to =1.0.0-beta — sl-dkls23 1.0.0-beta incompatible with sl-oblivious 1.1.0 (DLogProof gained generic param)
+- [Phase 13.1]: sl-dkls23 retains multi-thread default feature — test-support needs tokio/rt-multi-thread via multi-thread
+- [Phase 13.1]: ChannelRelayConn Sink::Error = MessageSendError — sl-mpc-mate 1.0.0-beta Relay trait requires exactly this Error type
+
+## Roadmap Evolution
+
+- Phase 13.1 inserted after Phase 13: sl-dkls23 迁移 — 将 dkls23-ll 替换为 sl-dkls23 高层 async API (URGENT)
 
 ## Performance Metrics
 
@@ -64,8 +71,9 @@ Next: Phase 9
 | Phase 12 P01 | 39s | 1 tasks | 1 files |
 | Phase 12 P02 | 206s | 2 tasks | 3 files |
 | Phase 13 P01 | 137s | 2 tasks | 12 files |
+| Phase 13.1 P01 | 271s | 2 tasks | 6 files |
 
 ## Last Session
 
-Stopped at: Completed 13-01-PLAN.md
+Stopped at: Completed 13.1-01-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z
