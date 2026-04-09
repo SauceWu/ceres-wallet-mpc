@@ -64,6 +64,58 @@ pub struct ExportResult {
     pub exported: bool,
 }
 
+/// 协议类型枚举，用于 wire format 信封路由。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProtocolType {
+    Dkg,
+    Dsg,
+    Rotation,
+}
+
+/// client ↔ server 协议消息的统一 JSON 信封。
+/// dkls23-ll 消息通过 serde 序列化后放入 payload 字段。
+/// 此结构在 Phase 8 冻结，Phase 9-13 直接使用。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WireEnvelope {
+    /// 32 字节 session ID 的 hex 编码
+    pub session_id: String,
+    /// 协议类型
+    pub protocol: ProtocolType,
+    /// 轮次编号 (1-4)
+    pub round: u8,
+    /// 发送方 party ID
+    pub from_id: u8,
+    /// 接收方 party ID（None = broadcast）
+    pub to_id: Option<u8>,
+    /// payload 编码方式（默认 "cbor_base64"）
+    pub payload_encoding: String,
+    /// 编码后的 dkls23-ll 消息（Base64 编码的 CBOR 字节或 JSON string）
+    pub payload: String,
+}
+
+impl WireEnvelope {
+    /// 构造新信封，payload_encoding 默认为 "cbor_base64"
+    pub fn new(
+        session_id: String,
+        protocol: ProtocolType,
+        round: u8,
+        from_id: u8,
+        to_id: Option<u8>,
+        payload: String,
+    ) -> Self {
+        Self {
+            session_id,
+            protocol,
+            round,
+            from_id,
+            to_id,
+            payload_encoding: "cbor_base64".to_string(),
+            payload,
+        }
+    }
+}
+
 /// 32 字节消息摘要的安全类型包装。
 /// 防止将任意 Vec<u8> 直接传入签名函数。
 /// 不实现 From<Vec<u8>>、From<&[u8]> 或 From<[u8; 32]>。
@@ -100,6 +152,92 @@ impl MessageDigest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // === WireEnvelope / ProtocolType 测试（Plan 02）===
+
+    #[test]
+    fn test_protocol_type_dkg_serializes_lowercase() {
+        let json = serde_json::to_string(&ProtocolType::Dkg).unwrap();
+        assert_eq!(json, r#""dkg""#);
+    }
+
+    #[test]
+    fn test_protocol_type_dsg_serializes_lowercase() {
+        let json = serde_json::to_string(&ProtocolType::Dsg).unwrap();
+        assert_eq!(json, r#""dsg""#);
+    }
+
+    #[test]
+    fn test_protocol_type_rotation_serializes_lowercase() {
+        let json = serde_json::to_string(&ProtocolType::Rotation).unwrap();
+        assert_eq!(json, r#""rotation""#);
+    }
+
+    #[test]
+    fn test_wire_envelope_roundtrip() {
+        let env = WireEnvelope::new(
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
+            ProtocolType::Dkg,
+            1,
+            0,
+            None,
+            "base64payload==".to_string(),
+        );
+        let json = serde_json::to_string(&env).unwrap();
+        let restored: WireEnvelope = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.session_id, env.session_id);
+        assert_eq!(restored.protocol, env.protocol);
+        assert_eq!(restored.round, env.round);
+        assert_eq!(restored.from_id, env.from_id);
+        assert_eq!(restored.to_id, env.to_id);
+        assert_eq!(restored.payload_encoding, env.payload_encoding);
+        assert_eq!(restored.payload, env.payload);
+    }
+
+    #[test]
+    fn test_wire_envelope_broadcast_to_id_is_null() {
+        let env = WireEnvelope::new(
+            "aabbcc".to_string(),
+            ProtocolType::Dsg,
+            1,
+            0,
+            None,
+            "payload".to_string(),
+        );
+        let json = serde_json::to_string(&env).unwrap();
+        assert!(json.contains(r#""to_id":null"#));
+    }
+
+    #[test]
+    fn test_wire_envelope_p2p_to_id_is_number() {
+        let env = WireEnvelope::new(
+            "aabbcc".to_string(),
+            ProtocolType::Dsg,
+            2,
+            1,
+            Some(0),
+            "payload".to_string(),
+        );
+        let json = serde_json::to_string(&env).unwrap();
+        assert!(json.contains(r#""to_id":0"#));
+    }
+
+    #[test]
+    fn test_wire_envelope_default_payload_encoding_is_cbor_base64() {
+        let env = WireEnvelope::new(
+            "aabbcc".to_string(),
+            ProtocolType::Rotation,
+            1,
+            0,
+            None,
+            "payload".to_string(),
+        );
+        assert_eq!(env.payload_encoding, "cbor_base64");
+        let json = serde_json::to_string(&env).unwrap();
+        assert!(json.contains(r#""payload_encoding":"cbor_base64""#));
+    }
+
+    // === MessageDigest 测试（Plan 01）===
 
     #[test]
     fn test_message_digest_new_succeeds() {
