@@ -89,16 +89,124 @@ Success criteria:
 - recover() 传入 newUserBackupSecret 时 RecoveryResult.encryptedBackupShare 非 null
 - flutter analyze 无 error，全部 Rust/Dart 测试通过
 
-### Current Focus
-- 当前优先进入 Phase 3
-- 不先碰业务 UI，不先碰多链，不先碰原钱包 SDK 主项目耦合
-
 #### Phase 6: Key Export / Wallet Migration
-- 从两方 MPC share 重建完整私钥
-- Rust 实现 party1_secret * party2_secret 私钥重建
-- Dart MpcClient.exportPrivateKey() 方法
-- 导出后标记密钥为 exported 状态
+
+**Goal:** 从两方 MPC share 重建完整私钥，提供安全的私钥导出和钱包迁移能力。
+
+**Requirements:** [MPC-11]
+
+**Plans:** TBD
 
 Success criteria:
 - 导出的私钥可验证对应 keygen 产生的 EVM 地址
 - 导出后 MPC 密钥标记为 exported
+
+---
+
+### Milestone v2.0: DKLS23 Migration
+
+## Phases
+
+- [ ] **Phase 7: 依赖替换与本地双平台编译** - 用 dkls23-ll 彻底替换 kms-secp256k1/curv-kzen/GMP，验证 iOS + Android 本地 cargo build 通过
+- [ ] **Phase 8: Wire Format 与安全类型定义** - 定义 DKG/DSG/Rotation 各轮 JSON wire format 结构，引入 MessageDigest newtype 防止原始字节误传
+- [ ] **Phase 9: DKG Keygen 4 轮协议** - 基于 dkls23-ll 实现完整 4 轮 keygen，产出 Keyshare + EVM 地址，建立 Rust 双方模拟测试框架
+- [ ] **Phase 10: DSG Signing 4 轮协议** - 基于 dkls23-ll 实现 4 轮 signing，含 recid 计算，强制 PreSignature 一次性销毁
+- [ ] **Phase 11: Key Rotation/Recovery 4 轮协议** - 基于 dkls23-ll 实现 4 轮 rotation/recovery，建立 Session TTL 超时驱逐机制
+- [ ] **Phase 12: Backup Envelope 与 Key Export** - 适配 Keyshare 序列化格式的 backup envelope，实现 s_i 合并私钥重建
+- [ ] **Phase 13: FRB Codegen + Dart 层适配 + CI 门控** - 重新生成 FRB 绑定，Dart MpcEngine 适配 4 轮模型，配置 CI 交叉编译产物发布
+
+## Phase Details
+
+### Phase 7: 依赖替换与本地双平台编译
+**Goal**: iOS + Android 本地 cargo build 均通过，kms-secp256k1 / curv-kzen / GMP 依赖从 Cargo.toml 和 build.rs 中完全移除
+**Depends on**: Phase 6 (M1 last phase)
+**Requirements**: INFRA-01, INFRA-02
+**Success Criteria** (what must be TRUE):
+  1. `cargo build --target aarch64-apple-ios` 无错误完成
+  2. `cargo build --target aarch64-linux-android` 无错误完成
+  3. Cargo.toml 中不再出现 kms-secp256k1、curv-kzen、GMP 任何引用
+  4. build.rs 和 vendor/gmp/ 目录已删除或不存在
+**Plans**: 2 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Cargo.toml 依赖替换 + build.rs 删除 + session.rs/mpc_engine.rs stub 化 + vendor/gmp 清理 (INFRA-01)
+- [ ] 07-02-PLAN.md — Android NDK 配置 + iOS/Android 双平台 cargo check 验证 (INFRA-02)
+
+### Phase 8: Wire Format 与安全类型定义
+**Goal**: 所有协议轮次的 JSON wire format 已定案，MessageDigest newtype 已在 Rust 边界强制使用，后续 PROTO 阶段可直接引用
+**Depends on**: Phase 7
+**Requirements**: INFRA-04, SEC-03
+**Success Criteria** (what must be TRUE):
+  1. DKG、DSG、Rotation 各轮的 JSON 结构已在 `.planning/` 或 Rust 类型注释中记录并冻结
+  2. Rust 代码中签名函数入参类型为 `MessageDigest` 而非 `Vec<u8>` 或 `[u8; 32]`
+  3. 传入原始 `Vec<u8>` 给签名函数会产生编译错误
+**Plans**: TBD
+
+### Phase 9: DKG Keygen 4 轮协议
+**Goal**: 基于 dkls23-ll 的 4 轮 DKG 协议完整运行，产出合法 Keyshare 和可验证的 EVM 地址，Rust 双方模拟测试框架就位
+**Depends on**: Phase 8
+**Requirements**: PROTO-01, REG-01
+**Success Criteria** (what must be TRUE):
+  1. Rust 集成测试 `test_dkg_two_party` 通过（in-process 模拟 Party1 + Party2 完成 4 轮交换）
+  2. DKG 产出的 Keyshare 可序列化/反序列化（往返无损）
+  3. Keyshare 中的公钥经 keccak256 可推导出合法 EVM 地址（0x 前缀，40 位十六进制）
+  4. 所有后续协议（DSG、Rotation）的 Rust 模拟测试均沿用本阶段建立的双方测试框架
+**Plans**: TBD
+
+### Phase 10: DSG Signing 4 轮协议
+**Goal**: 基于 dkls23-ll 的 4 轮 DSG 协议完整运行，签名结果包含 r、s、recid，PreSignature 在使用后被强制销毁
+**Depends on**: Phase 9
+**Requirements**: PROTO-02, SEC-01
+**Success Criteria** (what must be TRUE):
+  1. Rust 集成测试 `test_dsg_two_party` 通过（使用 DKG 产出的 Keyshare，完成 4 轮 DSG 交换）
+  2. 签名结果含 r、s、recid，可通过 ecrecover 还原签名者 EVM 地址
+  3. PreSignature 对象在完成一次签名后无法被再次传入签名函数（类型系统或运行时强制消费）
+  4. 尝试复用已消费 PreSignature 返回明确错误，不静默成功
+**Plans**: TBD
+
+### Phase 11: Key Rotation/Recovery 4 轮协议
+**Goal**: 基于 dkls23-ll 的 4 轮 rotation 协议完整运行，Session 具备 TTL 超时驱逐能力，rotationVersion 正确递增
+**Depends on**: Phase 10
+**Requirements**: PROTO-03, SEC-02
+**Success Criteria** (what must be TRUE):
+  1. Rust 集成测试 `test_rotation_two_party` 通过（4 轮交换后产出新 Keyshare，旧 Keyshare 不可继续用于签名）
+  2. recovery 路径（backup share + server share → 新 Keyshare）通过 Rust 测试验证
+  3. rotationVersion 在每次 rotation/recovery 后递增，不硬编码
+  4. 超过 TTL 的 session 被驱逐后，后续轮次消息返回明确错误而非挂起
+**Plans**: TBD
+
+### Phase 12: Backup Envelope 与 Key Export
+**Goal**: Backup envelope 完全适配 Keyshare 新序列化格式，Key export 私钥重建路径可验证
+**Depends on**: Phase 11
+**Requirements**: AUX-01, AUX-02
+**Success Criteria** (what must be TRUE):
+  1. `derive_backup_envelope(keyshare)` → `decrypt_backup_share(envelope)` 往返测试通过（AES-256-GCM 逻辑不变，输入类型为 Keyshare）
+  2. 错误的备份密钥或截断的 envelope 返回 Err，不 panic
+  3. `export_private_key(keyshare_1, keyshare_2)` 重建私钥后，私钥对应的 EVM 地址与 DKG 产出地址一致
+  4. 导出私钥后，原 Keyshare 被标记为 exported 状态（不允许继续用于签名）
+**Plans**: TBD
+
+### Phase 13: FRB Codegen + Dart 层适配 + CI 门控
+**Goal**: Flutter 层 MpcEngine/MpcClient API 适配 4 轮协议模型，CI 自动构建并发布 iOS XCFramework 和 Android .so 产物
+**Depends on**: Phase 12
+**Requirements**: INFRA-05, INFRA-03, REG-02
+**Success Criteria** (what must be TRUE):
+  1. `flutter_rust_bridge_codegen` 重新生成后，Dart 侧调用 4 轮 DKG/DSG/Rotation 无编译错误
+  2. `flutter analyze` 和 `flutter test` 全部通过
+  3. GitHub Actions CI 在 push/PR 时自动构建 iOS XCFramework 和 Android .so，并作为 artifacts 上传
+  4. CI 构建失败（任一 target）时 PR 无法合并（branch protection gate 生效）
+  5. Dart MpcEngine 对外接口与 M1 约定的 start/continue 模式保持一致（调用方不需要感知 4 轮内部结构）
+**Plans**: TBD
+**UI hint**: yes
+
+## Progress Table
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
+| 8. Wire Format 与安全类型定义 | 0/? | Not started | - |
+| 9. DKG Keygen 4 轮协议 | 0/? | Not started | - |
+| 10. DSG Signing 4 轮协议 | 0/? | Not started | - |
+| 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
+| 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
+| 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
