@@ -2,7 +2,7 @@
 ///
 /// Mimics real server behavior including:
 /// - Session lifecycle (create → use → expire)
-/// - Correct JSON field names matching kms-secp256k1 serde output
+/// - Correct JSON field names matching DKLs23 protocol output
 /// - Request validation (missing params, unknown session)
 /// - Error responses using standard JSON-RPC error codes
 ///
@@ -16,7 +16,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:ceres_mpc/ceres_mpc.dart';
 
-/// Simulates a complete MPC server (Party1) with session state management.
+/// Simulates a complete MPC server (server side) with session state management.
 class MockMpcTransport implements MpcTransport {
   /// Active sessions keyed by sessionId.
   final Map<String, _MockSession> _sessions = {};
@@ -69,8 +69,8 @@ class MockMpcTransport implements MpcTransport {
   Map<String, dynamic> _keygenStart(Map<String, dynamic> params) {
     final sessionId = _generateSessionId('kg');
 
-    // Simulate Party1 keygen round 1:
-    // MasterKey1::key_gen_first_message() produces commitment + zk proof
+    // Simulate Server DKG round 1:
+    // Keyshare (server)::key_gen_first_message() produces commitment + zk proof
     // ChainCode1::chain_code_first_message() produces CC commitment
     final session = _MockSession(
       type: _SessionType.keygen,
@@ -113,9 +113,9 @@ class MockMpcTransport implements MpcTransport {
       throw _RpcError(-32001, 'Session not found or expired: $sessionId');
     }
 
-    // Simulate Party1 keygen round 2:
+    // Simulate Server DKG round 2:
     // Verify client's DLog proof, reveal commitment witness,
-    // assemble MasterKey1 and persist it.
+    // assemble Keyshare (server) and persist it.
 
     // Generate a deterministic mock key pair for this session
     final mockMpcKeyId = 'mpc_${_mockHex(8)}';
@@ -127,7 +127,7 @@ class MockMpcTransport implements MpcTransport {
       mpcKeyId: mockMpcKeyId,
       address: mockAddress,
       publicKey: mockPublicKeyHex,
-      masterKey1Serialized: _mockHex(256), // serialized MasterKey1
+      keyshareSerialized: _mockHex(256), // serialized Keyshare (server)
       rotationVersion: 1,
       exported: false,
     );
@@ -145,7 +145,7 @@ class MockMpcTransport implements MpcTransport {
             },
           },
           'ek': _mockHex(512), // Paillier encryption key
-          'c_key': _mockHex(512), // encrypted Party1 secret
+          'c_key': _mockHex(512), // encrypted server secret
           'correct_key_proof': {
             'sigma_vec': List.generate(10, (_) => _mockHex(64)),
           },
@@ -190,8 +190,8 @@ class MockMpcTransport implements MpcTransport {
       round: 1,
       state: {
         'mpcKeyId': mpcKeyId,
-        'coin_flip_m1': _mockHex(64), // Party1's coin-flip secret
-        'coin_flip_r1': _mockHex(64), // Party1's coin-flip randomness
+        'coin_flip_m1': _mockHex(64), // server's coin-flip secret
+        'coin_flip_r1': _mockHex(64), // server's coin-flip randomness
       },
     );
 
@@ -223,10 +223,10 @@ class MockMpcTransport implements MpcTransport {
 
     // Simulate:
     // 1. Rotation1::key_rotate_second_message() — complete coin-flip
-    // 2. master_key1.rotation_first_message() — apply rotation to MasterKey1
-    // 3. Persist new MasterKey1
+    // 2. master_key1.rotation_first_message() — apply rotation to Keyshare (server)
+    // 3. Persist new Keyshare (server)
 
-    keyRecord.masterKey1Serialized = _mockHex(256); // new rotated key
+    keyRecord.keyshareSerialized = _mockHex(256); // new rotated key
     keyRecord.rotationVersion += 1;
 
     return {
@@ -240,10 +240,10 @@ class MockMpcTransport implements MpcTransport {
             'zk_pok_blind_factor': _mockHex(64),
           },
         },
-        // RotationParty1Message1: rotation proof for Party2
+        // RotationParty1Message1: rotation proof for client
         'rotation_party1_first_message': {
           'ek': _mockHex(512), // new Paillier encryption key
-          'c_key_new': _mockHex(512), // new encrypted Party1 secret
+          'c_key_new': _mockHex(512), // new encrypted server secret
           'correct_key_proof': {
             'sigma_vec': List.generate(10, (_) => _mockHex(64)),
           },
@@ -278,8 +278,8 @@ class MockMpcTransport implements MpcTransport {
 
     final sessionId = _generateSessionId('sg');
 
-    // Simulate Party1 ephemeral key generation for signing:
-    // MasterKey1::sign_first_message() generates ephemeral EC key pair
+    // Simulate server ephemeral key generation for signing:
+    // Keyshare (server)::sign_first_message() generates ephemeral EC key pair
     _sessions[sessionId] = _MockSession(
       type: _SessionType.sign,
       round: 1,
@@ -293,7 +293,7 @@ class MockMpcTransport implements MpcTransport {
     return {
       'sessionId': sessionId,
       'serverPayload': {
-        // EphKeyGenFirstMsg: Party1's ephemeral public key commitment
+        // EphKeyGenFirstMsg: server's ephemeral public key commitment
         'eph_key_gen_first_message_party_one': {
           'pk_commitment': _mockHex(64),
           'zk_pok_commitment': _mockHex(64),
@@ -315,8 +315,8 @@ class MockMpcTransport implements MpcTransport {
     }
 
     // Simulate:
-    // Parse client's SignMessage (partial signature from Party2)
-    // master_key1.sign_second_message() — complete the 2-party signature
+    // Parse client's SignMessage (partial signature from client)
+    // master_key1.sign_second_message() — complete the DKLs23 signature
     // Return (r, s, recid)
 
     return {
@@ -346,8 +346,8 @@ class MockMpcTransport implements MpcTransport {
     // Mark as exported — all future MPC operations will be rejected
     keyRecord.exported = true;
 
-    // Return Party1's private share for key reconstruction
-    // In real server: serde_json::to_value(&master_key1.private)
+    // Return server's private share for key reconstruction
+    // In real server: serde_json::to_value(&keyshare_server.private)
     return {
       'serverSharePrivate': {
         // Party1Private.x1: the secret scalar (FE)
@@ -415,7 +415,7 @@ class _MockKeyRecord {
   final String mpcKeyId;
   final String address;
   final String publicKey;
-  String masterKey1Serialized;
+  String keyshareSerialized;
   int rotationVersion;
   bool exported;
 
@@ -423,7 +423,7 @@ class _MockKeyRecord {
     required this.mpcKeyId,
     required this.address,
     required this.publicKey,
-    required this.masterKey1Serialized,
+    required this.keyshareSerialized,
     required this.rotationVersion,
     required this.exported,
   });
