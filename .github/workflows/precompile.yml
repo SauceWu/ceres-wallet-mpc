@@ -20,9 +20,6 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-linux-android
 
-      - name: Install GMP
-        run: brew install gmp
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
