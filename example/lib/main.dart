@@ -11,11 +11,18 @@ import 'package:ceres_mpc/ceres_mpc.dart';
 import 'package:ceres_mpc/src/bridge/mpc_engine.dart';
 import 'package:ceres_mpc/src/rust/frb_generated.dart';
 
+import 'mock_engine.dart';
 import 'mock_transport.dart';
+
+/// Set to true to use mock engine (no Rust crypto, for UI testing).
+/// Set to false to use real Rust engine (requires real server or will fail with mock transport).
+const _useMockEngine = true;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RustLib.init();
+  if (!_useMockEngine) {
+    await RustLib.init();
+  }
   runApp(const ExampleApp());
 }
 
@@ -62,7 +69,9 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
     // ─────────────────────────────────────────────────────────────
     _client = MpcClient(
       // ignore: invalid_use_of_internal_member
-      engine: MpcEngine(RustLib.instance.api),
+      engine: _useMockEngine
+          ? MockMpcEngine()
+          : MpcEngine(RustLib.instance.api),
       transport: MockMpcTransport(),
     );
   }
@@ -105,6 +114,9 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
       _log('Protocol error: ${e.message} (round: ${e.round})');
     } on MpcTransportException catch (e) {
       _log('Transport error: ${e.message} (method: ${e.method})');
+    }catch (e) {
+      print('Unexpected error during keygen: $e');
+      _log('Unexpected error: $e');
     }
   }
 
