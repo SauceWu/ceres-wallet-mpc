@@ -9,47 +9,59 @@ use aes_gcm::{
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
 use derivation_path::DerivationPath;
-use dkls23_ll::dkg::{Party, State as DkgState};
-use dkls23_ll::dsg::{self, combine_signatures, create_partial_signature};
 use hkdf::Hkdf;
-use k256::ecdsa::{RecoveryId, VerifyingKey};
 use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::{AffinePoint, NonZeroScalar, ProjectivePoint, Scalar};
+use k256::{NonZeroScalar, Scalar};
+use rand::RngCore;
 use sha2::Sha256;
 use std::str::FromStr;
+use std::sync::Arc;
 
+use sl_dkls23::keygen::key_refresh::{self, KeyshareForRefresh};
+use sl_dkls23::keygen::Keyshare;
+use sl_dkls23::key_export::combine_shares;
+use sl_dkls23::setup::keygen::SetupMessage as KeygenSetup;
+use sl_dkls23::setup::sign::SetupMessage as SignSetup;
+use sl_dkls23::setup::{NoSigningKey, NoVerifyingKey};
+use sl_mpc_mate::message::InstanceId;
+
+use crate::relay::ChannelRelayConn;
+use crate::runtime::get_runtime;
 use crate::session::{
     KeygenSession, RecoverySession, SignSession, EXPORTED_KEYS, KEYGEN_SESSIONS,
     RECOVERY_SESSIONS, SESSION_TTL, SIGN_SESSIONS,
 };
 use std::time::Instant;
+use tokio::sync::mpsc;
 
-// ── CBOR 编解码助手 ───────────────────────────────────────────────────
+// ── InstanceId ヘルパー ──────────────────────────────────────────────
 
-fn encode_cbor_base64<T: serde::Serialize>(msg: &T) -> Result<String, String> {
-    let mut buf = Vec::new();
-    ciborium::into_writer(msg, &mut buf).map_err(|e| format!("cbor encode: {e}"))?;
-    Ok(BASE64_STANDARD.encode(&buf))
+/// session_id (64 char hex) から 32 バイト InstanceId を生成する。
+fn instance_id_from_session(session_id: &str) -> Result<InstanceId, String> {
+    let bytes = hex::decode(session_id)
+        .map_err(|e| format!("session_id hex decode failed: {e}"))?;
+    let arr: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| "session_id must be exactly 32 bytes (64 hex chars)".to_string())?;
+    Ok(InstanceId::from(arr))
 }
 
-fn decode_cbor_base64<T: serde::de::DeserializeOwned>(s: &str) -> Result<T, String> {
-    let bytes = BASE64_STANDARD
-        .decode(s)
-        .map_err(|e| format!("base64 decode: {e}"))?;
-    ciborium::from_reader(bytes.as_slice()).map_err(|e| format!("cbor decode: {e}"))
+/// 随机 32 字节种子
+fn random_seed() -> [u8; 32] {
+    let mut seed = [0u8; 32];
+    OsRng.fill_bytes(&mut seed);
+    seed
 }
 
 // ── Keygen ───────────────────────────────────────────────────────────
 
 /// DKG 协议启动入口。
-/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含 KeygenMsg1）
-/// 返回: MpcRoundResult JSON (status="in_progress", round=2, client_payload=WireEnvelope JSON)
+/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含不透明协议字节 Base64）
+/// 返回: MpcRoundResult JSON (status="in_progress", round=1, client_payload=WireEnvelope JSON)
 pub fn keygen_start(session_id: String, server_payload: String) -> Result<String, String> {
-    // 1. 解析服务端 Round 1 信封，提取 KeygenMsg1
+    // 1. 解析服务端信封，验证 from_id == 1
     let server_env: WireEnvelope = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
-
-    // 安全：验证信封来源为服务端 (from_id == 1)
     if server_env.from_id != 1 {
         return Err(format!(
             "expected from_id=1 (server), got from_id={}",
@@ -57,63 +69,72 @@ pub fn keygen_start(session_id: String, server_payload: String) -> Result<String
         ));
     }
 
-    let server_msg1: dkls23_ll::dkg::KeygenMsg1 =
-        decode_cbor_base64(&server_env.payload)?;
+    // 2. 提取服务端协议字节（Base64 解码）
+    let server_msg_bytes = BASE64_STANDARD
+        .decode(&server_env.payload)
+        .map_err(|e| format!("base64 decode server payload: {e}"))?;
 
-    // 2. 创建本方 DKG State (party_id=0, 2-of-2)
-    let mut rng = rand::thread_rng();
-    let party = Party {
-        ranks: vec![0u8, 0u8],
-        party_id: 0,
-        t: 2,
+    // 3. 构建 SetupMessage（2-of-2, party_id=0）
+    let inst = instance_id_from_session(&session_id)?;
+    let vk = vec![NoVerifyingKey::new(0), NoVerifyingKey::new(1)];
+    let setup = KeygenSetup::new(inst, NoSigningKey, 0, vk, &[0u8, 0u8], 2);
+
+    // 4. 创建 channel pair
+    let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(16);
+    let (tx_out_unbounded, mut rx_out_unbounded) = mpsc::unbounded_channel::<Vec<u8>>();
+
+    // 5. 构建 ChannelRelayConn 并 spawn 协议 task
+    let relay = ChannelRelayConn {
+        rx: rx_in,
+        tx: tx_out_unbounded,
     };
-    let mut state = DkgState::new(party, &mut rng);
+    let seed = random_seed();
+    let task_handle = get_runtime().spawn(async move {
+        sl_dkls23::keygen::dkg::run(setup, seed, relay)
+            .await
+            .map(|ks| ks.as_slice().to_vec())
+            .map_err(|e| e.to_string())
+    });
 
-    // 3. 生成本方 msg1（仅为了驱动协议，不需要发送给服务端；
-    //    服务端已在 Round 1 发来 server_msg1，我们只处理对方的 msg1）
-    let _my_msg1 = state.generate_msg1();
+    // 6. 注入服务端第一条消息
+    get_runtime()
+        .block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send initial server msg: {e}"))?;
 
-    // 4. handle_msg1：传入服务端 msg1，得到 Vec<KeygenMsg2>（1条，to_id=1）
-    let msg2_vec = state
-        .handle_msg1(&mut rng, vec![server_msg1])
-        .map_err(|e| e.to_string())?;
+    // 7. 读取协议输出的第一条客户端消息
+    let client_msg_bytes = get_runtime()
+        .block_on(rx_out_unbounded.recv())
+        .ok_or_else(|| "protocol task closed before producing first message".to_string())?;
 
-    if msg2_vec.is_empty() {
-        return Err("handle_msg1 returned empty Vec<KeygenMsg2>".to_string());
-    }
-
-    // 5. 序列化 msg2[0] 并包装进 WireEnvelope(round=2, P2P to=1)
-    let msg2_payload = encode_cbor_base64(&msg2_vec[0])?;
-    let env = WireEnvelope::new(
-        session_id.clone(),
-        ProtocolType::Dkg,
-        2,
-        0,
-        Some(1),
-        msg2_payload,
-        None,
-    );
-    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
-
-    // 6. 存储 KeygenSession（round=2 表示下次 continue 期待 server msg2）
+    // 8. 存储 session
     {
         let mut sessions = KEYGEN_SESSIONS.lock().unwrap();
         sessions.insert(
             session_id.clone(),
             KeygenSession {
-                state,
-                round: 2,
-                my_commitment_2: None,
-                server_commitment_2: None,
-                pending_msg3: None,
+                tx_in,
+                rx_out: rx_out_unbounded,
+                task_handle: Some(task_handle),
             },
         );
     }
 
-    // 7. 返回 MpcRoundResult
+    // 9. 包装客户端消息到 WireEnvelope，返回结果
+    let client_b64 = BASE64_STANDARD.encode(&client_msg_bytes);
+    let env = WireEnvelope::new(
+        session_id.clone(),
+        ProtocolType::Dkg,
+        server_env.round,
+        0,
+        Some(1),
+        client_b64,
+        None,
+    );
+    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
     let result = MpcRoundResult {
         status: "in_progress".to_string(),
-        round: 2,
+        round: server_env.round as i32,
         client_payload: Some(env_json),
         error_message: None,
     };
@@ -124,11 +145,9 @@ pub fn keygen_start(session_id: String, server_payload: String) -> Result<String
 /// server_payload: 服务端当前轮次 WireEnvelope JSON
 /// 返回: MpcRoundResult JSON（in_progress 或 completed）
 pub fn keygen_continue(session_id: String, server_payload: String) -> Result<String, String> {
-    // 解析服务端信封
+    // 1. 解析服务端信封，验证 from_id == 1
     let server_env: WireEnvelope = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
-
-    // 安全：验证信封来源为服务端 (from_id == 1)
     if server_env.from_id != 1 {
         return Err(format!(
             "expected from_id=1 (server), got from_id={}",
@@ -136,200 +155,85 @@ pub fn keygen_continue(session_id: String, server_payload: String) -> Result<Str
         ));
     }
 
-    let mut rng = rand::thread_rng();
+    // 2. 提取服务端协议字节
+    let server_msg_bytes = BASE64_STANDARD
+        .decode(&server_env.payload)
+        .map_err(|e| format!("base64 decode server payload: {e}"))?;
 
-    // 获取当前 session 的 round
-    let current_round = {
+    // 3. 获取 session 并注入服务端消息
+    let (tx_in, round) = {
         let sessions = KEYGEN_SESSIONS.lock().unwrap();
-        sessions
+        let session = sessions
             .get(&session_id)
-            .map(|s| s.round)
-            .ok_or_else(|| format!("session not found: {session_id}"))?
+            .ok_or_else(|| format!("keygen session not found: {session_id}"))?;
+        (session.tx_in.clone(), server_env.round)
     };
 
-    match current_round {
-        // ── Round 2：服务端发来 KeygenMsg2 ──────────────────────────────
-        2 => {
-            let server_msg2: dkls23_ll::dkg::KeygenMsg2 =
-                decode_cbor_base64(&server_env.payload)?;
+    get_runtime()
+        .block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send server msg to protocol: {e}"))?;
 
-            let commitment_payload = {
-                let mut sessions = KEYGEN_SESSIONS.lock().unwrap();
-                let session = sessions
-                    .get_mut(&session_id)
-                    .ok_or_else(|| format!("session not found: {session_id}"))?;
+    // 4. 等待协议输出
+    let next_msg = {
+        let mut sessions = KEYGEN_SESSIONS.lock().unwrap();
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("keygen session not found: {session_id}"))?;
+        get_runtime().block_on(session.rx_out.recv())
+    };
 
-                // handle_msg2 -> Vec<KeygenMsg3>
-                let msg3_vec = session
-                    .state
-                    .handle_msg2(&mut rng, vec![server_msg2])
-                    .map_err(|e| e.to_string())?;
-
-                if msg3_vec.is_empty() {
-                    return Err("handle_msg2 returned empty Vec<KeygenMsg3>".to_string());
-                }
-
-                // calculate_commitment_2（handle_msg2 完成后立即调用）
-                let my_c2 = session.state.calculate_commitment_2();
-                session.my_commitment_2 = Some(my_c2);
-
-                // 缓存 KeygenMsg3（CBOR bytes）供 Round 3b 使用
-                let mut msg3_buf = Vec::new();
-                ciborium::into_writer(&msg3_vec[0], &mut msg3_buf)
-                    .map_err(|e| format!("cbor encode msg3: {e}"))?;
-                session.pending_msg3 = Some(msg3_buf.clone());
-                session.round = 3;
-
-                // 编码 commitment_2 为 cbor_base64
-                let c2_payload = encode_cbor_base64(&my_c2)?;
-                c2_payload
-            };
-
-            // 返回 commitment_2 广播信封（step="commitment"）
+    match next_msg {
+        Some(client_msg_bytes) => {
+            // 中间轮次：包装并返回
+            let client_b64 = BASE64_STANDARD.encode(&client_msg_bytes);
             let env = WireEnvelope::new(
                 session_id.clone(),
                 ProtocolType::Dkg,
-                3,
-                0,
-                None,
-                commitment_payload,
-                Some("commitment".to_string()),
-            );
-            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
-
-            let result = MpcRoundResult {
-                status: "in_progress".to_string(),
-                round: 3,
-                client_payload: Some(env_json),
-                error_message: None,
-            };
-            serde_json::to_string(&result).map_err(|e| e.to_string())
-        }
-
-        // ── Round 3（step="commitment"）：服务端发来 commitment_2 ────────
-        3 if server_env.step.as_deref() == Some("commitment") => {
-            let server_c2: [u8; 32] = decode_cbor_base64(&server_env.payload)?;
-
-            // 缓存 server commitment_2，取出 pending_msg3
-            let pending_msg3_b64 = {
-                let mut sessions = KEYGEN_SESSIONS.lock().unwrap();
-                let session = sessions
-                    .get_mut(&session_id)
-                    .ok_or_else(|| format!("session not found: {session_id}"))?;
-
-                session.server_commitment_2 = Some(server_c2);
-
-                // pending_msg3 是原始 CBOR bytes，需要 base64 编码后放入 envelope
-                let msg3_bytes = session
-                    .pending_msg3
-                    .as_ref()
-                    .ok_or("pending_msg3 not set")?;
-                BASE64_STANDARD.encode(msg3_bytes)
-            };
-
-            // 包装 KeygenMsg3 P2P 信封（step="msg3"）
-            let env = WireEnvelope::new(
-                session_id.clone(),
-                ProtocolType::Dkg,
-                3,
+                round,
                 0,
                 Some(1),
-                pending_msg3_b64,
-                Some("msg3".to_string()),
-            );
-            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
-
-            let result = MpcRoundResult {
-                status: "in_progress".to_string(),
-                round: 3,
-                client_payload: Some(env_json),
-                error_message: None,
-            };
-            serde_json::to_string(&result).map_err(|e| e.to_string())
-        }
-
-        // ── Round 3（step="msg3"）：服务端发来 KeygenMsg3 ────────────────
-        3 if server_env.step.as_deref() == Some("msg3") => {
-            let server_msg3: dkls23_ll::dkg::KeygenMsg3 =
-                decode_cbor_base64(&server_env.payload)?;
-
-            let msg4_payload = {
-                let mut sessions = KEYGEN_SESSIONS.lock().unwrap();
-                let session = sessions
-                    .get_mut(&session_id)
-                    .ok_or_else(|| format!("session not found: {session_id}"))?;
-
-                let my_c2 = session
-                    .my_commitment_2
-                    .ok_or("my_commitment_2 not set")?;
-                let server_c2 = session
-                    .server_commitment_2
-                    .ok_or("server_commitment_2 not set")?;
-
-                // commitment_2_list 索引 == party_id
-                let commitment_2_list: Vec<[u8; 32]> = vec![my_c2, server_c2];
-
-                let msg4 = session
-                    .state
-                    .handle_msg3(&mut rng, vec![server_msg3], &commitment_2_list)
-                    .map_err(|e| e.to_string())?;
-
-                session.round = 4;
-                encode_cbor_base64(&msg4)?
-            };
-
-            // 返回 KeygenMsg4 broadcast 信封
-            let env = WireEnvelope::new(
-                session_id.clone(),
-                ProtocolType::Dkg,
-                4,
-                0,
-                None,
-                msg4_payload,
+                client_b64,
                 None,
             );
             let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
 
             let result = MpcRoundResult {
                 status: "in_progress".to_string(),
-                round: 4,
+                round: round as i32,
                 client_payload: Some(env_json),
                 error_message: None,
             };
             serde_json::to_string(&result).map_err(|e| e.to_string())
         }
-
-        // ── Round 4：服务端发来 KeygenMsg4，完成 DKG ─────────────────────
-        4 => {
-            let server_msg4: dkls23_ll::dkg::KeygenMsg4 =
-                decode_cbor_base64(&server_env.payload)?;
-
-            // 取出 session 所有权（handle_msg4 消耗 State）
-            let mut session = {
+        None => {
+            // 通道关闭 — 协议完成，获取 task 结果
+            let task_handle = {
                 let mut sessions = KEYGEN_SESSIONS.lock().unwrap();
                 sessions
                     .remove(&session_id)
-                    .ok_or_else(|| format!("session not found: {session_id}"))?
+                    .ok_or_else(|| format!("keygen session not found: {session_id}"))?
+                    .task_handle
+                    .ok_or("no task handle in keygen session")?
             };
 
-            // handle_msg4 -> Keyshare
-            let keyshare = session
-                .state
-                .handle_msg4(vec![server_msg4])
-                .map_err(|e| e.to_string())?;
+            let keyshare_bytes = get_runtime()
+                .block_on(task_handle)
+                .map_err(|e| format!("keygen task join error: {e}"))?
+                .map_err(|e| format!("keygen protocol error: {e}"))?;
 
-            // 提取公钥（65 字节非压缩）
-            let encoded = keyshare.public_key.to_encoded_point(false);
+            // 反序列化 Keyshare 提取公钥
+            let keyshare = Keyshare::from_bytes(&keyshare_bytes)
+                .ok_or("invalid keyshare bytes from protocol")?;
+
+            let pk_projective = keyshare.public_key();
+            let pk_affine = pk_projective.to_affine();
+            let encoded = pk_affine.to_encoded_point(false);
             let pubkey_bytes = encoded.as_bytes();
 
-            // 推导 EVM 地址
             let evm_address = crate::api::address::derive_evm_address(pubkey_bytes)?;
 
-            // 序列化 Keyshare 为 JSON 本地存储
-            let local_encrypted_share =
-                serde_json::to_string(&keyshare).map_err(|e| e.to_string())?;
+            let local_encrypted_share = BASE64_STANDARD.encode(&keyshare_bytes);
 
-            // 构造 KeygenCompletedPayload
             let completed = KeygenCompletedPayload {
                 mpc_key_id: session_id.clone(),
                 address: evm_address,
@@ -346,17 +250,12 @@ pub fn keygen_continue(session_id: String, server_payload: String) -> Result<Str
 
             let result = MpcRoundResult {
                 status: "completed".to_string(),
-                round: 4,
+                round: round as i32,
                 client_payload: Some(completed_json),
                 error_message: None,
             };
             serde_json::to_string(&result).map_err(|e| e.to_string())
         }
-
-        _ => Err(format!(
-            "unexpected session state: round={current_round}, step={:?}",
-            server_env.step
-        )),
     }
 }
 
@@ -368,7 +267,7 @@ pub fn recover_start(
     server_payload: String,
     current_rotation_version: i32,
 ) -> Result<String, String> {
-    // 1. 解析服务端 Round 1 信封，验证 from_id == 1（T-11-01）
+    // 1. 解析服务端信封，验证 from_id == 1
     let server_env: WireEnvelope = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
     if server_env.from_id != 1 {
@@ -378,64 +277,84 @@ pub fn recover_start(
         ));
     }
 
-    // 2. 反序列化旧 Keyshare（来自 decrypt_backup_share 结果，已解密的 JSON）
-    let old_keyshare: dkls23_ll::dkg::Keyshare = serde_json::from_str(&backup_share)
-        .map_err(|e| format!("invalid backup share JSON: {e}"))?;
+    // 2. 提取服务端协议字节
+    let server_msg_bytes = BASE64_STANDARD
+        .decode(&server_env.payload)
+        .map_err(|e| format!("base64 decode server payload: {e}"))?;
 
-    // 3. 初始化 rotation State — State::key_rotation 返回 Result，必须解包
-    let mut rng = rand::thread_rng();
-    let mut state = DkgState::key_rotation(&old_keyshare, &mut rng)
-        .map_err(|e| e.to_string())?;
+    // 3. 反序列化旧 Keyshare（Base64 → bytes → Keyshare）
+    let old_keyshare_bytes = BASE64_STANDARD
+        .decode(&backup_share)
+        .map_err(|e| format!("base64 decode backup_share: {e}"))?;
+    let old_keyshare = Keyshare::from_bytes(&old_keyshare_bytes)
+        .ok_or("invalid backup keyshare bytes")?;
 
-    // 4. 生成本方 msg1（驱动协议状态机，不需要发送给服务端）
-    let _my_msg1 = state.generate_msg1();
+    // 4. 构建 KeyshareForRefresh
+    let share_for_refresh = KeyshareForRefresh::from_keyshare(&old_keyshare, None);
 
-    // 5. 解码服务端 KeygenMsg1
-    let server_msg1: dkls23_ll::dkg::KeygenMsg1 = decode_cbor_base64(&server_env.payload)?;
+    // 5. 构建 SetupMessage（2-of-2, party_id=0）
+    let inst = instance_id_from_session(&session_id)?;
+    let vk = vec![NoVerifyingKey::new(0), NoVerifyingKey::new(1)];
+    let setup = KeygenSetup::new(inst, NoSigningKey, 0, vk, &[0u8, 0u8], 2);
 
-    // 6. handle_msg1 → Vec<KeygenMsg2>
-    let msg2_vec = state
-        .handle_msg1(&mut rng, vec![server_msg1])
-        .map_err(|e| e.to_string())?;
+    // 6. 创建 channel pair
+    let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(16);
+    let (tx_out_unbounded, mut rx_out_unbounded) = mpsc::unbounded_channel::<Vec<u8>>();
 
-    if msg2_vec.is_empty() {
-        return Err("handle_msg1 returned empty Vec<KeygenMsg2>".to_string());
-    }
+    // 7. spawn key_refresh::run task
+    let relay = ChannelRelayConn {
+        rx: rx_in,
+        tx: tx_out_unbounded,
+    };
+    let seed = random_seed();
+    let task_handle = get_runtime().spawn(async move {
+        key_refresh::run(setup, seed, relay, share_for_refresh)
+            .await
+            .map(|ks| ks.as_slice().to_vec())
+            .map_err(|e| e.to_string())
+    });
 
-    // 7. 序列化 msg2[0]，包装为 WireEnvelope(protocol=Rotation, round=2, P2P to=1)
-    let msg2_payload = encode_cbor_base64(&msg2_vec[0])?;
-    let env = WireEnvelope::new(
-        session_id.clone(),
-        ProtocolType::Rotation,
-        2,
-        0,
-        Some(1),
-        msg2_payload,
-        None,
-    );
-    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+    // 8. 注入服务端第一条消息
+    get_runtime()
+        .block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send initial server msg: {e}"))?;
 
-    // 8. 存储 RecoverySession（round=2，TTL 从此刻起算）
+    // 9. 读取协议输出第一条消息
+    let client_msg_bytes = get_runtime()
+        .block_on(rx_out_unbounded.recv())
+        .ok_or_else(|| "key_refresh task closed before producing first message".to_string())?;
+
+    // 10. 存储 RecoverySession（TTL 从现在开始）
     {
         let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
         sessions.insert(
             session_id.clone(),
             RecoverySession {
-                state,
-                round: 2,
+                tx_in,
+                rx_out: rx_out_unbounded,
+                task_handle: Some(task_handle),
                 created_at: Instant::now(),
-                my_commitment_2: None,
-                server_commitment_2: None,
-                pending_msg3: None,
                 current_rotation_version,
             },
         );
     }
 
-    // 9. 返回 MpcRoundResult
+    // 11. 包装客户端消息，返回结果
+    let client_b64 = BASE64_STANDARD.encode(&client_msg_bytes);
+    let env = WireEnvelope::new(
+        session_id.clone(),
+        ProtocolType::Rotation,
+        server_env.round,
+        0,
+        Some(1),
+        client_b64,
+        None,
+    );
+    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
     let result = MpcRoundResult {
         status: "in_progress".to_string(),
-        round: 2,
+        round: server_env.round as i32,
         client_payload: Some(env_json),
         error_message: None,
     };
@@ -443,7 +362,7 @@ pub fn recover_start(
 }
 
 pub fn recover_continue(session_id: String, server_payload: String) -> Result<String, String> {
-    // 解析服务端信封，验证 from_id == 1（T-11-01）
+    // 1. 解析服务端信封，验证 from_id == 1
     let server_env: WireEnvelope = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
     if server_env.from_id != 1 {
@@ -453,208 +372,93 @@ pub fn recover_continue(session_id: String, server_payload: String) -> Result<St
         ));
     }
 
-    let mut rng = rand::thread_rng();
+    // 2. 提取服务端协议字节
+    let server_msg_bytes = BASE64_STANDARD
+        .decode(&server_env.payload)
+        .map_err(|e| format!("base64 decode server payload: {e}"))?;
 
-    // SEC-02：TTL 检查 — 在单次 lock() 持有期间同时检查并驱逐过期 session
-    let current_round = {
+    // 3. SEC-02 TTL 检查 — 单次 lock 内检查并驱逐过期 session
+    let (tx_in, round, rotation_version) = {
         let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
         match sessions.get(&session_id) {
             None => return Err(format!("recovery session not found: {session_id}")),
             Some(s) if s.created_at.elapsed() > SESSION_TTL => {
                 sessions.remove(&session_id);
-                return Err(format!("session expired (TTL): {session_id}"));
+                return Err(format!("recovery session expired (TTL): {session_id}"));
             }
-            Some(s) => s.round,
+            Some(s) => (s.tx_in.clone(), server_env.round, s.current_rotation_version),
         }
     };
 
-    match current_round {
-        // ── Round 2：服务端发来 KeygenMsg2 ──────────────────────────────
-        2 => {
-            let server_msg2: dkls23_ll::dkg::KeygenMsg2 =
-                decode_cbor_base64(&server_env.payload)?;
+    // 4. 注入服务端消息
+    get_runtime()
+        .block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send server msg to protocol: {e}"))?;
 
-            let commitment_payload = {
-                let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
-                let session = sessions
-                    .get_mut(&session_id)
-                    .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
+    // 5. 等待协议输出
+    let next_msg = {
+        let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
+        get_runtime().block_on(session.rx_out.recv())
+    };
 
-                // handle_msg2 -> Vec<KeygenMsg3>
-                let msg3_vec = session
-                    .state
-                    .handle_msg2(&mut rng, vec![server_msg2])
-                    .map_err(|e| e.to_string())?;
-
-                if msg3_vec.is_empty() {
-                    return Err("handle_msg2 returned empty Vec<KeygenMsg3>".to_string());
-                }
-
-                // calculate_commitment_2（handle_msg2 完成后立即调用）
-                let my_c2 = session.state.calculate_commitment_2();
-                session.my_commitment_2 = Some(my_c2);
-
-                // 缓存 KeygenMsg3（CBOR bytes）供 Round 3b 使用
-                let mut msg3_buf = Vec::new();
-                ciborium::into_writer(&msg3_vec[0], &mut msg3_buf)
-                    .map_err(|e| format!("cbor encode msg3: {e}"))?;
-                session.pending_msg3 = Some(msg3_buf);
-                session.round = 3;
-
-                // 编码 commitment_2 为 cbor_base64
-                encode_cbor_base64(&my_c2)?
-            };
-
-            // 返回 commitment_2 广播信封（step="commitment", protocol=Rotation）
+    match next_msg {
+        Some(client_msg_bytes) => {
+            let client_b64 = BASE64_STANDARD.encode(&client_msg_bytes);
             let env = WireEnvelope::new(
                 session_id.clone(),
                 ProtocolType::Rotation,
-                3,
-                0,
-                None,
-                commitment_payload,
-                Some("commitment".to_string()),
-            );
-            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
-
-            let result = MpcRoundResult {
-                status: "in_progress".to_string(),
-                round: 3,
-                client_payload: Some(env_json),
-                error_message: None,
-            };
-            serde_json::to_string(&result).map_err(|e| e.to_string())
-        }
-
-        // ── Round 3（step="commitment"）：服务端发来 commitment_2 ────────
-        3 if server_env.step.as_deref() == Some("commitment") => {
-            let server_c2: [u8; 32] = decode_cbor_base64(&server_env.payload)?;
-
-            // 缓存 server commitment_2，取出 pending_msg3
-            let pending_msg3_b64 = {
-                let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
-                let session = sessions
-                    .get_mut(&session_id)
-                    .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
-
-                session.server_commitment_2 = Some(server_c2);
-
-                // pending_msg3 是原始 CBOR bytes，base64 编码后放入 envelope
-                let msg3_bytes = session
-                    .pending_msg3
-                    .as_ref()
-                    .ok_or("pending_msg3 not set")?;
-                BASE64_STANDARD.encode(msg3_bytes)
-            };
-
-            // 包装 KeygenMsg3 P2P 信封（step="msg3", protocol=Rotation）
-            let env = WireEnvelope::new(
-                session_id.clone(),
-                ProtocolType::Rotation,
-                3,
+                round,
                 0,
                 Some(1),
-                pending_msg3_b64,
-                Some("msg3".to_string()),
-            );
-            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
-
-            let result = MpcRoundResult {
-                status: "in_progress".to_string(),
-                round: 3,
-                client_payload: Some(env_json),
-                error_message: None,
-            };
-            serde_json::to_string(&result).map_err(|e| e.to_string())
-        }
-
-        // ── Round 3（step="msg3"）：服务端发来 KeygenMsg3 ────────────────
-        3 if server_env.step.as_deref() == Some("msg3") => {
-            let server_msg3: dkls23_ll::dkg::KeygenMsg3 =
-                decode_cbor_base64(&server_env.payload)?;
-
-            let msg4_payload = {
-                let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
-                let session = sessions
-                    .get_mut(&session_id)
-                    .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
-
-                let my_c2 = session
-                    .my_commitment_2
-                    .ok_or("my_commitment_2 not set")?;
-                let server_c2 = session
-                    .server_commitment_2
-                    .ok_or("server_commitment_2 not set")?;
-
-                // commitment_2_list 索引 == party_id
-                let commitment_2_list: Vec<[u8; 32]> = vec![my_c2, server_c2];
-
-                let msg4 = session
-                    .state
-                    .handle_msg3(&mut rng, vec![server_msg3], &commitment_2_list)
-                    .map_err(|e| e.to_string())?;
-
-                session.round = 4;
-                encode_cbor_base64(&msg4)?
-            };
-
-            // 返回 KeygenMsg4 broadcast 信封（protocol=Rotation）
-            let env = WireEnvelope::new(
-                session_id.clone(),
-                ProtocolType::Rotation,
-                4,
-                0,
-                None,
-                msg4_payload,
+                client_b64,
                 None,
             );
             let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
 
             let result = MpcRoundResult {
                 status: "in_progress".to_string(),
-                round: 4,
+                round: round as i32,
                 client_payload: Some(env_json),
                 error_message: None,
             };
             serde_json::to_string(&result).map_err(|e| e.to_string())
         }
-
-        // ── Round 4：服务端发来 KeygenMsg4，完成 Rotation ─────────────────
-        4 => {
-            let server_msg4: dkls23_ll::dkg::KeygenMsg4 =
-                decode_cbor_base64(&server_env.payload)?;
-
-            // 取出 session 所有权（handle_msg4 消耗 State）
-            let mut session = {
+        None => {
+            // 通道关闭 — 协议完成
+            let task_handle = {
                 let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
                 sessions
                     .remove(&session_id)
                     .ok_or_else(|| format!("recovery session not found: {session_id}"))?
+                    .task_handle
+                    .ok_or("no task handle in recovery session")?
             };
 
-            // handle_msg4 -> 新 Keyshare（public_key 内部继承自旧 Keyshare，锁定版本 c348be1 直接返回）
-            let new_keyshare = session
-                .state
-                .handle_msg4(vec![server_msg4])
-                .map_err(|e| e.to_string())?;
+            let new_keyshare_bytes = get_runtime()
+                .block_on(task_handle)
+                .map_err(|e| format!("key_refresh task join error: {e}"))?
+                .map_err(|e| format!("key_refresh protocol error: {e}"))?;
 
-            // 提取公钥（65 字节非压缩）
-            let encoded = new_keyshare.public_key.to_encoded_point(false);
+            let new_keyshare = Keyshare::from_bytes(&new_keyshare_bytes)
+                .ok_or("invalid new keyshare bytes from key_refresh")?;
+
+            let pk_projective = new_keyshare.public_key();
+            let pk_affine = pk_projective.to_affine();
+            let encoded = pk_affine.to_encoded_point(false);
             let pubkey_bytes = encoded.as_bytes();
 
-            // 推导 EVM 地址
             let evm_address = crate::api::address::derive_evm_address(pubkey_bytes)?;
 
-            // 序列化新 Keyshare 为 JSON 本地存储
-            let local_encrypted_share =
-                serde_json::to_string(&new_keyshare).map_err(|e| e.to_string())?;
+            let local_encrypted_share = BASE64_STANDARD.encode(&new_keyshare_bytes);
 
-            // 构造 RecoveryCompletedPayload，rotation_version 递增
             let completed = RecoveryCompletedPayload {
                 mpc_key_id: session_id.clone(),
                 address: evm_address,
                 public_key: hex::encode(pubkey_bytes),
-                rotation_version: session.current_rotation_version + 1,
+                rotation_version: rotation_version + 1,
                 local_encrypted_share,
             };
             let completed_json =
@@ -662,37 +466,32 @@ pub fn recover_continue(session_id: String, server_payload: String) -> Result<St
 
             let result = MpcRoundResult {
                 status: "completed".to_string(),
-                round: 4,
+                round: round as i32,
                 client_payload: Some(completed_json),
                 error_message: None,
             };
             serde_json::to_string(&result).map_err(|e| e.to_string())
         }
-
-        _ => Err(format!(
-            "unexpected recovery session state: round={current_round}, step={:?}",
-            server_env.step
-        )),
     }
 }
 
 // ── Signing ──────────────────────────────────────────────────────────
 
 /// DSG 协议启动入口。
-/// share: JSON-serialized Keyshare（来自本地安全存储）
+/// share: Base64 编码的 Keyshare 字节（来自本地安全存储）
 /// message_hash_hex: 32 字节消息摘要的 hex 编码（SEC-03 边界验证）
-/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含 SignMsg1）
-/// 返回: MpcRoundResult JSON (status="in_progress", round=2, client_payload=WireEnvelope JSON)
+/// server_payload: 服务端 Round 1 WireEnvelope JSON
+/// 返回: MpcRoundResult JSON (status="in_progress", client_payload=WireEnvelope JSON)
 pub fn sign_start(
     session_id: String,
     share: String,
     message_hash_hex: String,
     server_payload: String,
 ) -> Result<String, String> {
-    // 1. 类型安全边界：hex → MessageDigest（SEC-03，拒绝非 32 字节或非法 hex）
+    // 1. 类型安全边界：hex → MessageDigest（SEC-03）
     let digest = MessageDigest::from_hex(&message_hash_hex)?;
 
-    // 2. 解析服务端 Round 1 信封，验证 from_id == 1（T-10-01）
+    // 2. 解析服务端信封，验证 from_id == 1
     let server_env: WireEnvelope = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
     if server_env.from_id != 1 {
@@ -702,73 +501,100 @@ pub fn sign_start(
         ));
     }
 
-    // 3. 反序列化 Keyshare
-    let keyshare: dkls23_ll::dkg::Keyshare = serde_json::from_str(&share)
-        .map_err(|e| format!("invalid keyshare JSON: {e}"))?;
+    // 3. 提取服务端协议字节
+    let server_msg_bytes = BASE64_STANDARD
+        .decode(&server_env.payload)
+        .map_err(|e| format!("base64 decode server payload: {e}"))?;
 
-    // 4. 提取公钥（在 keyshare 被 State::new 消耗之前）
-    let public_key = keyshare.public_key;
+    // 4. 反序列化 Keyshare（Base64 → bytes → Keyshare）
+    let keyshare_bytes = BASE64_STANDARD
+        .decode(&share)
+        .map_err(|e| format!("base64 decode keyshare: {e}"))?;
+    let keyshare = Keyshare::from_bytes(&keyshare_bytes)
+        .ok_or("invalid keyshare bytes")?;
 
-    // 4a. T-12-04: 拒绝已导出 keyshare 的签名请求
-    let pk_hex = hex::encode(public_key.to_encoded_point(true).as_bytes());
+    // 5. T-13.1-04: EXPORTED_KEYS 守卫 — 在 spawn 前检查
+    let pk_projective = keyshare.public_key();
+    let pk_affine = pk_projective.to_affine();
+    let pk_hex = hex::encode(pk_affine.to_encoded_point(true).as_bytes());
     if EXPORTED_KEYS.lock().unwrap().contains(&pk_hex) {
         return Err("signing rejected: keyshare has been exported".to_string());
     }
 
-    // 5. 初始化 DSG State（"m" = master path，无 BIP-32 派生）
-    let mut rng = rand::thread_rng();
+    // 6. 构建 SignSetup（party_id=0, hash=digest, chain_path="m"）
+    let inst = instance_id_from_session(&session_id)?;
+    let vk = vec![NoVerifyingKey::new(0), NoVerifyingKey::new(1)];
     let chain_path = DerivationPath::from_str("m")
         .map_err(|e| format!("invalid derivation path: {e}"))?;
-    let mut state = dsg::State::new(&mut rng, keyshare, &chain_path)
-        .map_err(|e| e.to_string())?;
+    let keyshare_arc = Arc::new(keyshare);
+    let setup = SignSetup::new(inst, NoSigningKey, 0, vk, keyshare_arc)
+        .with_hash(digest.into_bytes())
+        .with_chain_path(chain_path);
 
-    // 6. generate_msg1（驱动本方状态机，Round 1 不需要发送给服务端）
-    let _my_msg1 = state.generate_msg1();
+    // 7. 创建 channel pair
+    let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(16);
+    let (tx_out_unbounded, mut rx_out_unbounded) = mpsc::unbounded_channel::<Vec<u8>>();
 
-    // 7. 解码服务端 SignMsg1，handle_msg1 → Vec<SignMsg2>
-    let server_msg1: dsg::SignMsg1 = decode_cbor_base64(&server_env.payload)?;
-    let msg2_vec = state
-        .handle_msg1(&mut rng, vec![server_msg1])
-        .map_err(|e| e.to_string())?;
+    // 8. spawn sign::run task
+    let relay = ChannelRelayConn {
+        rx: rx_in,
+        tx: tx_out_unbounded,
+    };
+    let seed = random_seed();
+    let task_handle = get_runtime().spawn(async move {
+        sl_dkls23::sign::run(setup, seed, relay)
+            .await
+            .map(|(sig, recid)| {
+                let (r, s) = sig.split_bytes();
+                let mut sig_bytes = r.to_vec();
+                sig_bytes.extend_from_slice(&s);
+                (sig_bytes, recid.to_byte())
+            })
+            .map_err(|e| e.to_string())
+    });
 
-    if msg2_vec.is_empty() {
-        return Err("handle_msg1 returned empty Vec<SignMsg2>".to_string());
-    }
+    // 9. 注入服务端第一条消息
+    get_runtime()
+        .block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send initial server msg: {e}"))?;
 
-    // 8. 序列化 msg2[0]，包装为 WireEnvelope(round=2, P2P to=1)
-    let msg2_payload = encode_cbor_base64(&msg2_vec[0])?;
-    let env = WireEnvelope::new(
-        session_id.clone(),
-        ProtocolType::Dsg,
-        2,
-        0,
-        Some(1),
-        msg2_payload,
-        None,
-    );
-    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+    // 10. 读取协议输出第一条消息
+    let client_msg_bytes = get_runtime()
+        .block_on(rx_out_unbounded.recv())
+        .ok_or_else(|| "sign task closed before producing first message".to_string())?;
 
-    // 9. 存储 SignSession（round=2，等待服务端 SignMsg2）
+    // 11. 存储 SignSession（SEC-01: consumed=false）
     {
         let mut sessions = SIGN_SESSIONS.lock().unwrap();
         sessions.insert(
             session_id.clone(),
             SignSession {
-                state,
-                round: 2,
+                tx_in,
+                rx_out: rx_out_unbounded,
+                task_handle: Some(task_handle),
                 digest,
                 consumed: false,
-                partial_sig: None,
-                pending_msg4: None,
-                public_key,
+                public_key_hex: pk_hex,
             },
         );
     }
 
-    // 10. 返回 MpcRoundResult
+    // 12. 包装客户端消息，返回结果
+    let client_b64 = BASE64_STANDARD.encode(&client_msg_bytes);
+    let env = WireEnvelope::new(
+        session_id.clone(),
+        ProtocolType::Dsg,
+        server_env.round,
+        0,
+        Some(1),
+        client_b64,
+        None,
+    );
+    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
     let result = MpcRoundResult {
         status: "in_progress".to_string(),
-        round: 2,
+        round: server_env.round as i32,
         client_payload: Some(env_json),
         error_message: None,
     };
@@ -779,7 +605,7 @@ pub fn sign_start(
 /// server_payload: 服务端当前轮次 WireEnvelope JSON
 /// 返回: MpcRoundResult JSON（in_progress 或 completed）
 pub fn sign_continue(session_id: String, server_payload: String) -> Result<String, String> {
-    // 解析服务端信封，验证 from_id == 1（T-10-01）
+    // 1. 解析服务端信封，验证 from_id == 1
     let server_env: WireEnvelope = serde_json::from_str(&server_payload)
         .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
     if server_env.from_id != 1 {
@@ -789,183 +615,112 @@ pub fn sign_continue(session_id: String, server_payload: String) -> Result<Strin
         ));
     }
 
-    let mut rng = rand::thread_rng();
+    // 2. 提取服务端协议字节
+    let server_msg_bytes = BASE64_STANDARD
+        .decode(&server_env.payload)
+        .map_err(|e| format!("base64 decode server payload: {e}"))?;
 
-    // 获取当前 session round
-    let current_round = {
+    // 3. SEC-01: 检查 consumed 标志
+    let (tx_in, round) = {
         let sessions = SIGN_SESSIONS.lock().unwrap();
-        sessions
+        let session = sessions
             .get(&session_id)
-            .map(|s| s.round)
-            .ok_or_else(|| format!("sign session not found: {session_id}"))?
+            .ok_or_else(|| format!("sign session not found: {session_id}"))?;
+        if session.consumed {
+            return Err(format!("sign session {} already consumed (SEC-01)", session_id));
+        }
+        (session.tx_in.clone(), server_env.round)
     };
 
-    match current_round {
-        // ── Round 2：服务端发来 SignMsg2 ──────────────────────────────────
-        2 => {
-            let server_msg2: dsg::SignMsg2 = decode_cbor_base64(&server_env.payload)?;
+    // 4. 注入服务端消息
+    get_runtime()
+        .block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send server msg to sign protocol: {e}"))?;
 
-            let msg3_payload = {
-                let mut sessions = SIGN_SESSIONS.lock().unwrap();
-                let session = sessions
-                    .get_mut(&session_id)
-                    .ok_or_else(|| format!("sign session not found: {session_id}"))?;
+    // 5. 等待协议输出
+    let next_msg = {
+        let mut sessions = SIGN_SESSIONS.lock().unwrap();
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("sign session not found: {session_id}"))?;
+        // SEC-01: 标记为 consumed（防止重入）
+        session.consumed = true;
+        get_runtime().block_on(session.rx_out.recv())
+    };
 
-                // handle_msg2 → Vec<SignMsg3>
-                let msg3_vec = session
-                    .state
-                    .handle_msg2(&mut rng, vec![server_msg2])
-                    .map_err(|e| e.to_string())?;
-
-                if msg3_vec.is_empty() {
-                    return Err("handle_msg2 returned empty Vec<SignMsg3>".to_string());
-                }
-
-                session.round = 3;
-                encode_cbor_base64(&msg3_vec[0])?
-            };
-
-            // 返回 SignMsg3 P2P 信封（to=1）
-            let env = WireEnvelope::new(
-                session_id.clone(),
-                ProtocolType::Dsg,
-                3,
-                0,
-                Some(1),
-                msg3_payload,
-                None,
-            );
-            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
-
-            let result = MpcRoundResult {
-                status: "in_progress".to_string(),
-                round: 3,
-                client_payload: Some(env_json),
-                error_message: None,
-            };
-            serde_json::to_string(&result).map_err(|e| e.to_string())
-        }
-
-        // ── Round 3：服务端发来 SignMsg3 — CRITICAL: SEC-01 enforcement ──
-        3 => {
-            let server_msg3: dsg::SignMsg3 = decode_cbor_base64(&server_env.payload)?;
-
-            // SEC-01: REMOVE session（防止 Round 3 重入；move 语义消耗 PreSignature）
-            let mut session = {
-                let mut sessions = SIGN_SESSIONS.lock().unwrap();
-                sessions
-                    .remove(&session_id)
-                    .ok_or_else(|| format!("sign session not found: {session_id}"))?
-            };
-
-            // SEC-01 运行时双重检查
-            if session.consumed {
-                return Err(format!("sign session {} already consumed", session_id));
-            }
-
-            // handle_msg3 → PreSignature（注意：无 rng 参数，与 DKG 不同）
-            let pre = session
-                .state
-                .handle_msg3(vec![server_msg3])
-                .map_err(|e| e.to_string())?;
-
-            // 立即消费 PreSignature（move 语义，Rust 编译器禁止再次使用）
-            let digest_bytes = session.digest.into_bytes();
-            let (partial, msg4) = create_partial_signature(pre, digest_bytes);
-
-            // 序列化 msg4 为 CBOR bytes（缓存供 Round 4 envelope 使用）
-            let mut msg4_buf = Vec::new();
-            ciborium::into_writer(&msg4, &mut msg4_buf)
-                .map_err(|e| format!("cbor encode msg4: {e}"))?;
-            let msg4_b64 = BASE64_STANDARD.encode(&msg4_buf);
-
-            // 更新 session：标记已消费，缓存 partial_sig 和 pending_msg4，重新插入
-            session.consumed = true;
-            session.partial_sig = Some(partial);
-            session.pending_msg4 = Some(msg4_buf);
-            session.round = 4;
-
+    match next_msg {
+        Some(client_msg_bytes) => {
+            // 中间消息 — 重置 consumed 标志（仍在进行中）
             {
                 let mut sessions = SIGN_SESSIONS.lock().unwrap();
-                sessions.insert(session_id.clone(), session);
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.consumed = false;
+                }
             }
 
-            // 返回 SignMsg4 broadcast 信封（to=None）
+            let client_b64 = BASE64_STANDARD.encode(&client_msg_bytes);
             let env = WireEnvelope::new(
                 session_id.clone(),
                 ProtocolType::Dsg,
-                4,
+                round,
                 0,
-                None,
-                msg4_b64,
+                Some(1),
+                client_b64,
                 None,
             );
             let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
 
             let result = MpcRoundResult {
                 status: "in_progress".to_string(),
-                round: 4,
+                round: round as i32,
                 client_payload: Some(env_json),
                 error_message: None,
             };
             serde_json::to_string(&result).map_err(|e| e.to_string())
         }
-
-        // ── Round 4：服务端发来 SignMsg4，完成 DSG ───────────────────────
-        4 => {
-            let server_msg4: dsg::SignMsg4 = decode_cbor_base64(&server_env.payload)?;
-
-            // REMOVE session（最终清理）
-            let mut session = {
+        None => {
+            // 通道关闭 — 协议完成（consumed 已为 true，保持）
+            let task_handle = {
                 let mut sessions = SIGN_SESSIONS.lock().unwrap();
                 sessions
                     .remove(&session_id)
                     .ok_or_else(|| format!("sign session not found: {session_id}"))?
+                    .task_handle
+                    .ok_or("no task handle in sign session")?
             };
 
-            // 取出 PartialSignature（消耗 Option）
-            let partial = session
-                .partial_sig
-                .take()
-                .ok_or("partial_sig not set in Round 4")?;
+            // task 输出: (r||s bytes, recid)
+            let (sig_bytes, recid) = get_runtime()
+                .block_on(task_handle)
+                .map_err(|e| format!("sign task join error: {e}"))?
+                .map_err(|e| format!("sign protocol error: {e}"))?;
 
-            // combine_signatures → Result<Signature, SignError>
-            let sig = combine_signatures(partial, vec![server_msg4])
-                .map_err(|e| e.to_string())?;
+            if sig_bytes.len() != 64 {
+                return Err(format!(
+                    "unexpected signature output length: {}",
+                    sig_bytes.len()
+                ));
+            }
 
-            // 计算 recid via trial recovery
-            // MessageDigest 实现 Copy，Round 3 的 into_bytes() 不消耗字段，Round 4 可直接读取
-            let vk = VerifyingKey::from_affine(session.public_key)
-                .map_err(|e| format!("invalid public key: {e}"))?;
-
-            let hash_bytes = session.digest.into_bytes();
-
-            let recid = RecoveryId::trial_recovery_from_prehash(&vk, &hash_bytes, &sig)
-                .map_err(|e| format!("recid recovery failed: {e}"))?;
-
-            // 提取 r, s bytes
-            let (r_bytes, s_bytes) = sig.split_bytes();
+            let r_hex = hex::encode(&sig_bytes[0..32]);
+            let s_hex = hex::encode(&sig_bytes[32..64]);
 
             let completed = SignCompletedPayload {
-                r: hex::encode(r_bytes),
-                s: hex::encode(s_bytes),
-                recid: recid.to_byte(),
+                r: r_hex,
+                s: s_hex,
+                recid,
             };
             let completed_json =
                 serde_json::to_string(&completed).map_err(|e| e.to_string())?;
 
             let result = MpcRoundResult {
                 status: "completed".to_string(),
-                round: 4,
+                round: round as i32,
                 client_payload: Some(completed_json),
                 error_message: None,
             };
             serde_json::to_string(&result).map_err(|e| e.to_string())
         }
-
-        _ => Err(format!(
-            "unexpected sign session state: round={current_round}"
-        )),
     }
 }
 
@@ -994,7 +749,7 @@ fn encrypt_share(plaintext: &[u8], key_bytes: &[u8; 32]) -> Result<String, Strin
 }
 
 /// Decrypt hex(nonce || ciphertext_with_tag), return plaintext bytes.
-fn decrypt_share(payload_hex: &str, key_bytes: &[u8; 32]) -> Result<Vec<u8>, String> {
+fn decrypt_share_bytes(payload_hex: &str, key_bytes: &[u8; 32]) -> Result<Vec<u8>, String> {
     let combined =
         hex::decode(payload_hex).map_err(|e| format!("hex decode failed: {e}"))?;
     if combined.len() < 12 {
@@ -1012,6 +767,7 @@ fn decrypt_share(payload_hex: &str, key_bytes: &[u8; 32]) -> Result<Vec<u8>, Str
 // ── Backup ───────────────────────────────────────────────────────────
 
 /// Derive a backup envelope from a live share and user secret.
+/// local_encrypted_share is a Base64-encoded Keyshare bytes string.
 /// Uses AES-256-GCM with HKDF-SHA256 key derivation.
 pub fn derive_backup_envelope(
     local_encrypted_share: String,
@@ -1030,6 +786,7 @@ pub fn derive_backup_envelope(
 }
 
 /// Decrypt a backup envelope to recover the device backup share.
+/// Returns the original local_encrypted_share string (Base64 Keyshare bytes).
 pub fn decrypt_backup_share(
     encrypted_envelope: String,
     user_backup_secret: String,
@@ -1037,7 +794,7 @@ pub fn decrypt_backup_share(
     let envelope: BackupEnvelope = serde_json::from_str(&encrypted_envelope)
         .map_err(|e| format!("invalid BackupEnvelope JSON: {e}"))?;
     let key = derive_aes_key(&user_backup_secret);
-    let plaintext_bytes = decrypt_share(&envelope.payload, &key)?;
+    let plaintext_bytes = decrypt_share_bytes(&envelope.payload, &key)?;
     let device_backup_share = String::from_utf8(plaintext_bytes)
         .map_err(|e| format!("decrypted bytes are not valid UTF-8: {e}"))?;
     let result = DecryptBackupResult {
@@ -1048,91 +805,88 @@ pub fn decrypt_backup_share(
 
 // ── Key Export ────────────────────────────────────────────────────────
 
-/// 中间结构体：从 Keyshare JSON 中提取私钥重建所需字段。
-/// Keyshare.s_i 是 pub(crate)，无法直接访问，但通过 serde 可反序列化。
-#[derive(serde::Deserialize)]
-struct KeyshareExportFields {
-    s_i: Scalar,
-    x_i_list: Vec<NonZeroScalar>,
-    rank_list: Vec<u8>,
-    party_id: u8,
-    public_key: AffinePoint,
-}
-
-/// Lagrange 系数（2-of-2）：lambda_i = x_j / (x_j - x_i)
-fn lagrange_coeff_2of2(x_i: &Scalar, x_j: &Scalar) -> Result<Scalar, String> {
-    let diff = x_j - x_i;
-    let diff_inv = Option::<Scalar>::from(diff.invert())
-        .ok_or_else(|| "degenerate Lagrange: x_i == x_j".to_string())?;
-    Ok(*x_j * diff_inv)
-}
-
+/// Export private key by combining two Keyshares using sl-dkls23 combine_shares.
+/// Replaces manual Lagrange interpolation with library function.
 pub fn export_private_key(
     local_share: String,
     server_share_private: String,
 ) -> Result<String, String> {
-    // 1. 反序列化两个 Keyshare JSON 到中间结构体
-    let fields_0: KeyshareExportFields = serde_json::from_str(&local_share)
-        .map_err(|e| format!("failed to parse local keyshare: {e}"))?;
-    let fields_1: KeyshareExportFields = serde_json::from_str(&server_share_private)
-        .map_err(|e| format!("failed to parse server keyshare: {e}"))?;
+    // 1. 反序列化两个 Keyshare（Base64 → bytes → Keyshare）
+    let local_bytes = BASE64_STANDARD
+        .decode(&local_share)
+        .map_err(|e| format!("base64 decode local_share: {e}"))?;
+    let server_bytes = BASE64_STANDARD
+        .decode(&server_share_private)
+        .map_err(|e| format!("base64 decode server_share_private: {e}"))?;
 
-    // 2. 验证 rank_list 全为 0（2-of-2 标准 Lagrange）
-    if fields_0.rank_list.iter().any(|&r| r != 0) || fields_1.rank_list.iter().any(|&r| r != 0) {
-        return Err("export only supports rank=0 (standard 2-of-2 Lagrange)".to_string());
-    }
+    let ks0 = Keyshare::from_bytes(&local_bytes)
+        .ok_or("invalid local keyshare bytes")?;
+    let ks1 = Keyshare::from_bytes(&server_bytes)
+        .ok_or("invalid server keyshare bytes")?;
 
-    // 3. 验证两个 share 来自同一 DKG 运行（public_key 必须一致）
-    if fields_0.public_key != fields_1.public_key {
+    // 2. 验证两个 share 来自同一 DKG（公钥必须一致）
+    let pk0 = ks0.public_key();
+    let pk1 = ks1.public_key();
+    if pk0 != pk1 {
         return Err(
             "private key reconstruction failed: public key mismatch — shares from different DKG runs".to_string()
         );
     }
 
-    // 4. 提取 x_i：x_i_list[party_id] 对应该 party 的 x 坐标
-    // NonZeroScalar derefs to Scalar，用 * 解引用
-    let x_0 = *fields_0
-        .x_i_list
-        .get(fields_0.party_id as usize)
-        .ok_or("x_i_list index out of range for party 0")?;
-    let x_1 = *fields_1
-        .x_i_list
-        .get(fields_1.party_id as usize)
-        .ok_or("x_i_list index out of range for party 1")?;
+    // 3. 提取 combine_shares 所需参数
+    //    x_i_list: [(x_i, rank_i)] — 每个 party 的 x 坐标和 rank
+    //    s_i_list: [s_i] — 每个 party 的秘密份额
+    let x_i_list_ks0 = ks0.x_i_list(); // Vec<NonZeroScalar>，索引 == party_id
+    let x_i_list_ks1 = ks1.x_i_list();
+    let rank_list_ks0 = ks0.rank_list(); // Vec<u8>，索引 == party_id
+    let rank_list_ks1 = ks1.rank_list();
 
-    // 5. 计算 Lagrange 系数
-    let lambda_0 = lagrange_coeff_2of2(&x_0, &x_1)?;
-    let lambda_1 = lagrange_coeff_2of2(&x_1, &x_0)?;
+    let party_id_0 = ks0.party_id as usize;
+    let party_id_1 = ks1.party_id as usize;
 
-    // 6. 重建私钥：private_key = lambda_0 * s_0 + lambda_1 * s_1
-    let private_key = lambda_0 * fields_0.s_i + lambda_1 * fields_1.s_i;
+    let x_i_0 = *x_i_list_ks0
+        .get(party_id_0)
+        .ok_or("x_i_list index out of range for local keyshare")?;
+    let rank_0 = *rank_list_ks0
+        .get(party_id_0)
+        .ok_or("rank_list index out of range for local keyshare")? as usize;
 
-    // 7. 验证：G * private_key == public_key
-    let derived_pub = (ProjectivePoint::GENERATOR * private_key).to_affine();
-    if derived_pub != fields_0.public_key {
-        return Err(
-            "private key reconstruction failed: public key mismatch after Lagrange interpolation"
-                .to_string(),
-        );
-    }
+    let x_i_1 = *x_i_list_ks1
+        .get(party_id_1)
+        .ok_or("x_i_list index out of range for server keyshare")?;
+    let rank_1 = *rank_list_ks1
+        .get(party_id_1)
+        .ok_or("rank_list index out of range for server keyshare")? as usize;
 
-    // 8. 派生 EVM 地址（非压缩公钥 65 字节）
-    let point = derived_pub.to_encoded_point(false);
+    let s_i_0 = ks0.s_i();
+    let s_i_1 = ks1.s_i();
+
+    let x_i_combined: Vec<(NonZeroScalar, usize)> =
+        vec![(x_i_0, rank_0), (x_i_1, rank_1)];
+    let s_i_combined: Vec<Scalar> = vec![s_i_0, s_i_1];
+
+    // 4. combine_shares — T-13.1-09: 内部验证 G*sk == pk
+    let private_key = combine_shares(&x_i_combined, &s_i_combined, &pk0)
+        .ok_or("private key reconstruction failed: public key mismatch after combining shares")?;
+
+    // 5. 派生 EVM 地址
+    let pk_affine = pk0.to_affine();
+    let point = pk_affine.to_encoded_point(false);
     let address = crate::api::address::derive_evm_address(point.as_bytes())?;
 
-    // 9. 将私钥转换为 hex（ScalarPrimitive → FieldBytes → hex）
+    // 6. 私钥转为 hex
     let scalar_primitive =
         k256::elliptic_curve::ScalarPrimitive::<k256::Secp256k1>::from(&private_key);
     let private_key_hex = hex::encode(scalar_primitive.to_bytes());
 
-    // 10. 注册导出的公钥，阻止后续使用此 keyshare 签名（T-12-04）
-    let pk_compressed_hex = hex::encode(fields_0.public_key.to_encoded_point(true).as_bytes());
+    // 7. 注册导出的公钥（T-13.1-04: 阻止后续使用此 keyshare 签名）
+    let pk_compressed_hex = hex::encode(pk_affine.to_encoded_point(true).as_bytes());
     EXPORTED_KEYS
         .lock()
         .unwrap()
         .insert(pk_compressed_hex);
 
-    // 11. 返回 ExportResult JSON
+    // 8. 返回 ExportResult JSON
     let result = ExportResult {
         private_key: private_key_hex,
         address,
