@@ -92,6 +92,10 @@ pub struct WireEnvelope {
     pub payload_encoding: String,
     /// 编码后的 dkls23-ll 消息（Base64 编码的 CBOR 字节或 JSON string）
     pub payload: String,
+    /// 可选步骤标识，用于 Round 3a/3b 区分：
+    /// Some("commitment") = commitment_2 广播，Some("msg3") = KeygenMsg3 P2P，None = 其他
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
 }
 
 impl WireEnvelope {
@@ -103,6 +107,7 @@ impl WireEnvelope {
         from_id: u8,
         to_id: Option<u8>,
         payload: String,
+        step: Option<String>,
     ) -> Self {
         Self {
             session_id,
@@ -112,6 +117,7 @@ impl WireEnvelope {
             to_id,
             payload_encoding: "cbor_base64".to_string(),
             payload,
+            step,
         }
     }
 }
@@ -182,6 +188,7 @@ mod tests {
             0,
             None,
             "base64payload==".to_string(),
+            None,
         );
         let json = serde_json::to_string(&env).unwrap();
         let restored: WireEnvelope = serde_json::from_str(&json).unwrap();
@@ -203,6 +210,7 @@ mod tests {
             0,
             None,
             "payload".to_string(),
+            None,
         );
         let json = serde_json::to_string(&env).unwrap();
         assert!(json.contains(r#""to_id":null"#));
@@ -217,6 +225,7 @@ mod tests {
             1,
             Some(0),
             "payload".to_string(),
+            None,
         );
         let json = serde_json::to_string(&env).unwrap();
         assert!(json.contains(r#""to_id":0"#));
@@ -231,6 +240,7 @@ mod tests {
             0,
             None,
             "payload".to_string(),
+            None,
         );
         assert_eq!(env.payload_encoding, "cbor_base64");
         let json = serde_json::to_string(&env).unwrap();

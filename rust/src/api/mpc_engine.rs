@@ -3,8 +3,25 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce,
 };
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine as _;
 use hkdf::Hkdf;
 use sha2::Sha256;
+
+// ── CBOR 编解码助手 ───────────────────────────────────────────────────
+
+fn encode_cbor_base64<T: serde::Serialize>(msg: &T) -> Result<String, String> {
+    let mut buf = Vec::new();
+    ciborium::into_writer(msg, &mut buf).map_err(|e| format!("cbor encode: {e}"))?;
+    Ok(BASE64_STANDARD.encode(&buf))
+}
+
+fn decode_cbor_base64<T: serde::de::DeserializeOwned>(s: &str) -> Result<T, String> {
+    let bytes = BASE64_STANDARD
+        .decode(s)
+        .map_err(|e| format!("base64 decode: {e}"))?;
+    ciborium::from_reader(bytes.as_slice()).map_err(|e| format!("cbor decode: {e}"))
+}
 
 // ── Keygen ───────────────────────────────────────────────────────────
 
