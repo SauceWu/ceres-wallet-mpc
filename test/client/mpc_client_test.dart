@@ -266,7 +266,7 @@ void main() {
         throw Exception('Unexpected method: $method');
       });
 
-      when(() => mockEngine.signStart('sess_sg1', 'my_share', any()))
+      when(() => mockEngine.signStart('sess_sg1', 'my_share', any(), any()))
           .thenAnswer((_) async => const MpcRoundResult(
                 status: 'continue',
                 round: 1,
@@ -291,7 +291,7 @@ void main() {
                 'serverPayload': {'message_hash': 'a' * 64},
               }));
 
-      when(() => mockEngine.signStart('sess_err', 'share', any()))
+      when(() => mockEngine.signStart('sess_err', 'share', any(), any()))
           .thenAnswer((_) async => const MpcRoundResult(
                 status: 'error',
                 round: 1,
@@ -354,7 +354,7 @@ void main() {
         throw Exception('Unexpected method: $method');
       });
 
-      when(() => mockEngine.signStart('sess_sg2', 'share2', any()))
+      when(() => mockEngine.signStart('sess_sg2', 'share2', any(), any()))
           .thenAnswer((_) async => const MpcRoundResult(
                 status: 'continue',
                 round: 1,

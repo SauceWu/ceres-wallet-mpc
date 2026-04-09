@@ -102,19 +102,22 @@ void main() {
       () => mockApi.crateApiMpcEngineSignStart(
         sessionId: any(named: 'sessionId'),
         share: any(named: 'share'),
+        messageHashHex: any(named: 'messageHashHex'),
         serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer(
       (_) async => _roundJson(clientPayload: 'stub_sign_round1'),
     );
 
-    final result = await engine.signStart('sess1', 'share_data', '{}');
+    const dummyHash = 'aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd';
+    final result = await engine.signStart('sess1', 'share_data', dummyHash, '{}');
 
     expect(result.isContinue, isTrue);
     verify(
       () => mockApi.crateApiMpcEngineSignStart(
         sessionId: 'sess1',
         share: 'share_data',
+        messageHashHex: dummyHash,
         serverPayload: '{}',
       ),
     ).called(1);
@@ -169,6 +172,7 @@ void main() {
       () => mockApi.crateApiMpcEngineSignStart(
         sessionId: any(named: 'sessionId'),
         share: any(named: 'share'),
+        messageHashHex: any(named: 'messageHashHex'),
         serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer((_) async => _roundJson());
@@ -184,7 +188,7 @@ void main() {
     await engine.keygenContinue('s', '{}');
     await engine.recoverStart('s', 'b', '{}', 1);
     await engine.recoverContinue('s', '{}');
-    await engine.signStart('s', 'sh', '{}');
+    await engine.signStart('s', 'sh', '0' * 64, '{}');
     await engine.signContinue('s', '{}');
 
     verify(() => mockApi.crateApiMpcEngineKeygenStart(
@@ -208,6 +212,7 @@ void main() {
     verify(() => mockApi.crateApiMpcEngineSignStart(
           sessionId: any(named: 'sessionId'),
           share: any(named: 'share'),
+          messageHashHex: any(named: 'messageHashHex'),
           serverPayload: any(named: 'serverPayload'),
         )).called(1);
     verify(() => mockApi.crateApiMpcEngineSignContinue(
