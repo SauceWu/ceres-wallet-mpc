@@ -4,12 +4,12 @@
 
 基于两方 ECDSA 的 MPC SDK，为 [Ceres Wallet] 提供密钥管理能力。
 
-密码学核心基于 [ZenGo-X/kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1)（Lindell 2017 协议），Rust 实现 + Dart 编排层，通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 桥接。
+密码学核心基于 [sl-dkls23](https://github.com/silence-laboratories/dkls23)（DKLs23 协议），Rust 实现 + Dart 编排层，通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 桥接。
 
 ## 功能
 
-- **密钥生成（Keygen）** -- 两方 ECDSA 联合生成 secp256k1 密钥，输出 MasterKey2 + EVM 地址
-- **密钥恢复（Recovery）** -- 基于 coin-flip 的密钥轮换，恢复后保持链上地址不变
+- **密钥生成（Keygen）** -- 两方 ECDSA 联合生成 secp256k1 密钥，输出 Keyshare + EVM 地址
+- **密钥恢复（Recovery）** -- 基于 DKLs23 key refresh 的密钥轮换，恢复后保持链上地址不变
 - **交易签名（Signing）** -- 两方 ECDSA 协同签名，返回 (r, s, recid)
 - **备份与恢复** -- AES-256-GCM 加密备份信封的生成与解密
 - **密钥导出（Export）** -- 将 MPC 钱包导出为普通钱包，重建完整私钥
@@ -37,8 +37,8 @@
                      |  flutter_rust_bridge
           +----------v----------+
           |     Rust 核心        |   密码学实现
-          |  kms-secp256k1      |
-          |  multi-party-ecdsa  |
+          |  sl-dkls23          |
+          |  DKLs23 protocol    |
           +---------------------+
 ```
 
@@ -75,7 +75,6 @@
 
 - Flutter >= 1.17.0, Dart SDK >= 3.8.1
 - Rust 工具链（用于编译原生库）
-- GMP 库（macOS: `brew install gmp`）
 
 ### 安装
 
@@ -165,7 +164,7 @@ rust/
 
 ## 协议流程
 
-### 密钥生成（2 轮）
+### 密钥生成（4 轮内部，2 次请求往返）
 
 ```
 客户端 (Party2)                      服务端 (Party1)
@@ -190,7 +189,7 @@ rust/
      v  KeygenResult                    v
 ```
 
-### 密钥恢复（2 轮）
+### 密钥恢复（4 轮内部，2 次请求往返）
 
 ```
 客户端 (Party2)                      服务端 (Party1)
@@ -221,12 +220,11 @@ rust/
 
 | Crate | 用途 |
 |-------|------|
-| [kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1) v0.3.1 | 两方 ECDSA 密钥管理 |
-| [multi-party-ecdsa](https://github.com/KZen-networks/multi-party-ecdsa) v0.4.6 | Lindell 2017 协议实现 |
-| [curv-kzen](https://crates.io/crates/curv-kzen) v0.7 | 椭圆曲线原语 |
-| [zk-paillier](https://github.com/KZen-networks/zk-paillier) v0.3.12 | 零知识 Paillier 证明 |
-| [paillier](https://github.com/KZen-networks/rust-paillier) v0.3.10 | Paillier 加密 |
-| [centipede](https://github.com/KZen-networks/centipede) v0.2.12 | 可验证秘密分享 |
+| [sl-dkls23](https://crates.io/crates/sl-dkls23) 1.0.0-beta | DKLs23 threshold ECDSA (keygen, sign, key refresh, key export) |
+| [sl-mpc-mate](https://crates.io/crates/sl-mpc-mate) 1.0.0-beta | MPC coordination (Relay trait, message routing) |
+| [k256](https://crates.io/crates/k256) 0.13 | secp256k1 elliptic curve primitives |
+| [tokio](https://crates.io/crates/tokio) 1 | Async runtime for protocol bridge |
+| [aes-gcm](https://crates.io/crates/aes-gcm) 0.10 | AES-256-GCM backup encryption |
 
 ## 运行测试
 
@@ -246,7 +244,8 @@ cd rust && cargo test
 - [x] 真实交易签名（两方 ECDSA）
 - [x] AES-256-GCM 备份加密（HKDF-SHA256 密钥派生）
 - [x] 密钥导出（MPC → 普通钱包迁移）
-- [ ] 主动密钥轮换（proactive refresh，无需恢复）
+- [x] 密钥轮换（DKLs23 key refresh）
+- [x] DKLs23 迁移（sl-dkls23 v1.0.0-beta）
 - [ ] 多链支持（EVM 以外）
 
 ## 安全
@@ -260,8 +259,8 @@ cd rust && cargo test
 
 ## 许可证
 
-GPL-3.0 -- 详见 [LICENSE](LICENSE)。受上游依赖 [kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1) 协议约束。
+MIT -- 详见 [LICENSE](LICENSE)。
 
 ## 致谢
 
-基于 [ZenGo-X](https://github.com/ZenGo-X) 优秀的开源 MPC 库构建。
+基于 [Silence Laboratories](https://github.com/silence-laboratories) 的 [sl-dkls23](https://github.com/silence-laboratories/dkls23) 构建。

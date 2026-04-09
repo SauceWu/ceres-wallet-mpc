@@ -4,12 +4,12 @@
 
 Two-party ECDSA MPC SDK for Flutter.
 
-Built on [ZenGo-X/kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1) (Lindell 2017) with Rust core and Dart orchestration layer via [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge).
+Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) (DKLs23 protocol) with Rust core and Dart orchestration layer via [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge).
 
 ## Features
 
-- **Key Generation** -- Two-party ECDSA keygen with secp256k1, outputs MasterKey2 + EVM address
-- **Key Recovery** -- Coin-flip based key rotation preserving the original on-chain address
+- **Key Generation** -- Two-party ECDSA keygen with secp256k1, outputs Keyshare + EVM address
+- **Key Recovery** -- DKLs23 key refresh preserving the original on-chain address
 - **Transaction Signing** -- Two-party ECDSA signing, returns (r, s, recid)
 - **Backup & Restore** -- AES-256-GCM encrypted backup envelope derivation and decryption
 - **Key Export** -- Export MPC wallet to standard wallet by reconstructing full private key
@@ -37,8 +37,8 @@ Built on [ZenGo-X/kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1) (Lind
                      |  flutter_rust_bridge
           +----------v----------+
           |     Rust Core       |   Cryptography
-          |  kms-secp256k1      |
-          |  multi-party-ecdsa  |
+          |  sl-dkls23          |
+          |  DKLs23 protocol    |
           +---------------------+
 ```
 
@@ -56,7 +56,6 @@ Built on [ZenGo-X/kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1) (Lind
 
 - Flutter >= 1.17.0, Dart SDK >= 3.8.1
 - Rust toolchain (for building the native library)
-- GMP library (`brew install gmp` on macOS)
 
 ### Installation
 
@@ -146,7 +145,7 @@ rust/
 
 ## Protocol Flow
 
-### Keygen (2 rounds)
+### Keygen (4 rounds internally, 2 round-trips)
 
 ```
 Client (Party2)                    Server (Party1)
@@ -171,7 +170,7 @@ Client (Party2)                    Server (Party1)
      v  KeygenResult                    v
 ```
 
-### Recovery (2 rounds)
+### Recovery (4 rounds internally, 2 round-trips)
 
 ```
 Client (Party2)                    Server (Party1)
@@ -203,12 +202,11 @@ Client (Party2)                    Server (Party1)
 
 | Crate | Purpose |
 |-------|---------|
-| [kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1) v0.3.1 | Two-party ECDSA key management |
-| [multi-party-ecdsa](https://github.com/KZen-networks/multi-party-ecdsa) v0.4.6 | Lindell 2017 protocol implementation |
-| [curv-kzen](https://crates.io/crates/curv-kzen) v0.7 | Elliptic curve primitives |
-| [zk-paillier](https://github.com/KZen-networks/zk-paillier) v0.3.12 | Zero-knowledge Paillier proofs |
-| [paillier](https://github.com/KZen-networks/rust-paillier) v0.3.10 | Paillier encryption |
-| [centipede](https://github.com/KZen-networks/centipede) v0.2.12 | Verifiable secret sharing |
+| [sl-dkls23](https://crates.io/crates/sl-dkls23) 1.0.0-beta | DKLs23 threshold ECDSA (keygen, sign, key refresh, key export) |
+| [sl-mpc-mate](https://crates.io/crates/sl-mpc-mate) 1.0.0-beta | MPC coordination (Relay trait, message routing) |
+| [k256](https://crates.io/crates/k256) 0.13 | secp256k1 elliptic curve primitives |
+| [tokio](https://crates.io/crates/tokio) 1 | Async runtime for protocol bridge |
+| [aes-gcm](https://crates.io/crates/aes-gcm) 0.10 | AES-256-GCM backup encryption |
 
 ## Running Tests
 
@@ -228,7 +226,8 @@ cd rust && cargo test
 - [x] Real transaction signing (two-party ECDSA)
 - [x] AES-256-GCM backup encryption (HKDF-SHA256 key derivation)
 - [x] Key export (MPC → standard wallet migration)
-- [ ] Key rotation (proactive refresh without recovery)
+- [x] Key rotation (DKLs23 key refresh)
+- [x] DKLs23 migration (sl-dkls23 v1.0.0-beta)
 - [ ] Multi-chain support (beyond EVM)
 
 ## Security
@@ -242,8 +241,8 @@ If you discover a security vulnerability, please report it responsibly via [sauc
 
 ## License
 
-GPL-3.0 -- see [LICENSE](LICENSE). Required by upstream dependency [kms-secp256k1](https://github.com/ZenGo-X/kms-secp256k1).
+MIT -- see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-Built on the excellent open-source MPC libraries from [ZenGo-X](https://github.com/ZenGo-X).
+Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) by [Silence Laboratories](https://github.com/silence-laboratories).
