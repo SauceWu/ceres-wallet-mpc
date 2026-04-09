@@ -701,7 +701,7 @@ impl SseDecode for crate::api::types::MessageDigest {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_field0 = <[u8; 32]>::sse_decode(deserializer);
-        return crate::api::types::MessageDigest::new(var_field0);
+        return crate::api::types::MessageDigest(var_field0);
     }
 }
 
@@ -861,7 +861,7 @@ fn pde_ffi_dispatcher_sync_impl(
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::types::MessageDigest {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [self.into_bytes().into_into_dart().into_dart()].into_dart()
+        [self.0.into_into_dart().into_dart()].into_dart()
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
@@ -952,7 +952,7 @@ impl SseEncode for Vec<u8> {
 impl SseEncode for crate::api::types::MessageDigest {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <[u8; 32]>::sse_encode(self.into_bytes(), serializer);
+        <[u8; 32]>::sse_encode(self.0, serializer);
     }
 }
 

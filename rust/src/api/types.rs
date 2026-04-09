@@ -126,7 +126,7 @@ impl WireEnvelope {
 /// 防止将任意 Vec<u8> 直接传入签名函数。
 /// 不实现 From<Vec<u8>>、From<&[u8]> 或 From<[u8; 32]>。
 #[derive(Debug, Clone, Copy)]
-pub struct MessageDigest([u8; 32]);
+pub struct MessageDigest(pub [u8; 32]);
 
 impl MessageDigest {
     /// 从精确的 32 字节数组构造。

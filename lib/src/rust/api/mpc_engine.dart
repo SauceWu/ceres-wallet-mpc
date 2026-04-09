@@ -6,12 +6,11 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `decode_cbor_base64`, `decrypt_share`, `derive_aes_key`, `encode_cbor_base64`, `encrypt_share`, `lagrange_coeff_2of2`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `KeyshareExportFields`
+// These functions are ignored because they are not marked as `pub`: `decrypt_share_bytes`, `derive_aes_key`, `encrypt_share`, `instance_id_from_session`, `random_seed`
 
 /// DKG 协议启动入口。
-/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含 KeygenMsg1）
-/// 返回: MpcRoundResult JSON (status="in_progress", round=2, client_payload=WireEnvelope JSON)
+/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含不透明协议字节 Base64）
+/// 返回: MpcRoundResult JSON (status="in_progress", round=1, client_payload=WireEnvelope JSON)
 Future<String> keygenStart({
   required String sessionId,
   required String serverPayload,
@@ -52,10 +51,10 @@ Future<String> recoverContinue({
 );
 
 /// DSG 协议启动入口。
-/// share: JSON-serialized Keyshare（来自本地安全存储）
+/// share: Base64 编码的 Keyshare 字节（来自本地安全存储）
 /// message_hash_hex: 32 字节消息摘要的 hex 编码（SEC-03 边界验证）
-/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含 SignMsg1）
-/// 返回: MpcRoundResult JSON (status="in_progress", round=2, client_payload=WireEnvelope JSON)
+/// server_payload: 服务端 Round 1 WireEnvelope JSON
+/// 返回: MpcRoundResult JSON (status="in_progress", client_payload=WireEnvelope JSON)
 Future<String> signStart({
   required String sessionId,
   required String share,
@@ -80,6 +79,7 @@ Future<String> signContinue({
 );
 
 /// Derive a backup envelope from a live share and user secret.
+/// local_encrypted_share is a Base64-encoded Keyshare bytes string.
 /// Uses AES-256-GCM with HKDF-SHA256 key derivation.
 Future<String> deriveBackupEnvelope({
   required String localEncryptedShare,
@@ -92,6 +92,7 @@ Future<String> deriveBackupEnvelope({
 );
 
 /// Decrypt a backup envelope to recover the device backup share.
+/// Returns the original local_encrypted_share string (Base64 Keyshare bytes).
 Future<String> decryptBackupShare({
   required String encryptedEnvelope,
   required String userBackupSecret,
@@ -100,6 +101,8 @@ Future<String> decryptBackupShare({
   userBackupSecret: userBackupSecret,
 );
 
+/// Export private key by combining two Keyshares using sl-dkls23 combine_shares.
+/// Replaces manual Lagrange interpolation with library function.
 Future<String> exportPrivateKey({
   required String localShare,
   required String serverSharePrivate,
