@@ -13,16 +13,16 @@ Client (Party2 / ceres_mpc)          Server (Party1 / your backend)
         |  POST /rpc                          |
         |<----------------------------------->|
         |                                     |
-   Rust: kms-secp256k1                  Rust/Go/Any: kms-secp256k1
-   MasterKey2                           MasterKey1
-   deviceLiveShare                      serverShare
+   Rust: sl-dkls23                       Rust/Go/Any: DKLs23 compatible
+   Keyshare (client)                    Keyshare (server)
+   deviceKeyshare                       serverKeyshare
 ```
 
 The server acts as **Party1** in the two-party ECDSA protocol. It must:
 1. Expose a single JSON-RPC 2.0 endpoint (e.g. `POST /rpc`)
 2. Handle 7 methods: `keygen_start`, `keygen_continue`, `recovery_start`, `recovery_continue`, `sign_start`, `sign_continue`, `export_key`
-3. Run Party1-side cryptographic operations (kms-secp256k1)
-4. Store `serverShare` (MasterKey1) securely
+3. Run Party1-side DKLs23 protocol (sl-dkls23 or compatible)
+4. Store `serverKeyshare` (Keyshare) securely
 5. Manage ephemeral session state between protocol rounds
 
 ## JSON-RPC 2.0 Protocol
@@ -66,14 +66,13 @@ All communication uses JSON-RPC 2.0 over a single HTTP endpoint.
 ```toml
 # Cargo.toml (if server is Rust)
 [dependencies]
-kms-secp256k1 = { git = "https://github.com/ZenGo-X/kms-secp256k1", tag = "v0.3.1", package = "kms" }
-multi-party-ecdsa = { git = "https://github.com/KZen-networks/multi-party-ecdsa", tag = "v0.4.6" }
-curv-kzen = { version = "0.7", default-features = false, features = ["rust-gmp-kzen"] }
-zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.3.12" }
-paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.10" }
+sl-dkls23 = "1.0.0-beta"
+sl-mpc-mate = "1.0.0-beta"
+tokio = { version = "1", features = ["rt", "macros"] }
+k256 = { version = "0.13", features = ["ecdsa"] }
 ```
 
-If your server is not Rust, you need a Rust FFI bridge or a compatible implementation.
+If your server uses a different language, implement a DKLs23-compatible protocol. The wire format uses opaque byte arrays -- any conforming implementation works.
 
 ---
 
@@ -90,9 +89,8 @@ If your server is not Rust, you need a Rust FFI bridge or a compatible implement
   |                    |--------------------->|                      |
   |                    |                      |  RPC keygen_start    |
   |                    |                      |--------------------->|
-  |                    |                      |                      | MasterKey1::key_gen_first_message()
-  |                    |                      |                      | ChainCode1::chain_code_first_message()
-  |                    |                      |  result:             | Store session state
+  |                    |                      |                      | DKG Round 1 (via Relay)
+  |                    |                      |  result:             | Store session
   |                    |                      |  {sessionId,         |
   |                    |                      |   serverPayload}     |
   |                    |                      |<---------------------|
@@ -102,9 +100,9 @@ If your server is not Rust, you need a Rust FFI bridge or a compatible implement
   |                    |                      |  RPC keygen_continue |
   |                    |                      |  {clientPayload}     |
   |                    |                      |--------------------->|
-  |                    |                      |                      | MasterKey1::key_gen_second_message()
-  |                    |                      |                      | MasterKey1::set_master_key()
-  |                    |                      |  result:             | Persist MasterKey1
+  |                    |                      |                      | DKG Rounds 2-4 (via Relay)
+  |                    |                      |                      | → Keyshare
+  |                    |                      |  result:             | Persist Keyshare
   |                    |                      |  {serverPayload}     |
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -132,8 +130,8 @@ If your server is not Rust, you need a Rust FFI bridge or a compatible implement
   |                    |                      |                      |
   |                    |                      |  RPC recovery_start  |
   |                    |                      |--------------------->|
-  |                    |                      |                      | Load MasterKey1
-  |                    |                      |                      | Rotation1::key_rotate_first_message()
+  |                    |                      |                      | Load Keyshare
+  |                    |                      |                      | key_refresh Round 1
   |                    |                      |  result: {sessionId, |
   |                    |                      |   serverPayload}     |
   |                    |                      |<---------------------|
@@ -142,8 +140,8 @@ If your server is not Rust, you need a Rust FFI bridge or a compatible implement
   |                    |                      |                      |
   |                    |                      |  RPC recovery_continue
   |                    |                      |--------------------->|
-  |                    |                      |                      | Complete rotation
-  |                    |                      |  result:             | Persist NEW MasterKey1
+  |                    |                      |                      | key_refresh Rounds 2-4
+  |                    |                      |  result:             | Persist new Keyshare
   |                    |                      |  {serverPayload}     |
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -167,8 +165,8 @@ If your server is not Rust, you need a Rust FFI bridge or a compatible implement
   |                    |--------------------->|                      |
   |                    |                      |  RPC sign_start      |
   |                    |                      |--------------------->|
-  |                    |                      |                      | Load MasterKey1
-  |                    |                      |  result: {sessionId, | Generate ephemeral key
+  |                    |                      |                      | Load Keyshare
+  |                    |                      |  result: {sessionId, | DSG Round 1
   |                    |                      |   serverPayload}     |
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -176,7 +174,7 @@ If your server is not Rust, you need a Rust FFI bridge or a compatible implement
   |                    |                      |                      |
   |                    |                      |  RPC sign_continue   |
   |                    |                      |--------------------->|
-  |                    |                      |                      | Complete signing
+  |                    |                      |                      | DSG Rounds 2-4
   |                    |                      |  result: {r, s, recid}
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -211,11 +209,10 @@ If your server is not Rust, you need a Rust FFI bridge or a compatible implement
 
 **Server-side logic:**
 ```rust
-let (kg_party_one_first_message, kg_comm_witness, kg_ec_key_pair_party1) =
-    MasterKey1::key_gen_first_message();
-let (cc_party_one_first_message, cc_comm_witness, cc_ec_key_pair1) =
-    ChainCode1::chain_code_first_message();
-// Store session: { kg_comm_witness, kg_ec_key_pair_party1, cc_comm_witness, cc_ec_key_pair1 }
+let setup = KeygenSetup::new(inst, sk, 1, vk_list, &[0, 0], 2);
+// Server runs as Party1 (party_id=1) in 2-of-2 DKLs23
+// Spawn async keygen::dkg::run(setup, seed, relay)
+// First round message sent via Relay trait
 ```
 
 ---
@@ -247,28 +244,11 @@ let (cc_party_one_first_message, cc_comm_witness, cc_ec_key_pair1) =
 
 **Server-side logic:**
 ```rust
-let session = get_session(session_id);
-let (kg_party_one_second_message, party_one_paillier, party_one_private) =
-    MasterKey1::key_gen_second_message(
-        session.kg_comm_witness.clone(),
-        &session.kg_ec_key_pair_party1,
-        &client_payload.kg_party_two_first_message.d_log_proof,
-    );
-let cc_party_one_second_message = ChainCode1::chain_code_second_message(
-    session.cc_comm_witness,
-    &client_payload.cc_party_two_first_message.d_log_proof,
-);
-let party1_cc = ChainCode1::compute_chain_code(
-    &session.cc_ec_key_pair1,
-    &client_payload.cc_party_two_first_message.public_share,
-);
-let master_key1 = MasterKey1::set_master_key(
-    &party1_cc.chain_code, party_one_private,
-    &session.kg_comm_witness.public_share,
-    &client_payload.kg_party_two_first_message.public_share,
-    party_one_paillier,
-);
-// Persist master_key1 as serverShare
+// DKLs23 protocol rounds 2-4 handled via Relay
+// Each continue call advances the protocol state
+// Final round produces Keyshare
+let keyshare_b64 = base64::encode(keyshare.as_slice());
+// Persist keyshare_b64
 ```
 
 ---
@@ -294,9 +274,9 @@ let master_key1 = MasterKey1::set_master_key(
 
 **Server-side logic:**
 ```rust
-let master_key1 = load_server_share(mpc_key_id);
-let (coin_flip_party1_first_message, m1, r1) = Rotation1::key_rotate_first_message();
-// Store session: { master_key1, m1, r1 }
+let keyshare = load_keyshare(mpc_key_id);
+let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
+// Spawn key_refresh::run(setup, seed, relay, kfr)
 ```
 
 ---
@@ -327,15 +307,9 @@ let (coin_flip_party1_first_message, m1, r1) = Rotation1::key_rotate_first_messa
 
 **Server-side logic:**
 ```rust
-let session = get_session(session_id);
-let (coin_flip_party1_second_message, server_rotation) =
-    Rotation1::key_rotate_second_message(
-        &client_payload.coin_flip_party2_first_message,
-        &session.m1, &session.r1,
-    );
-let (rotation_party1_first_message, new_master_key1) =
-    session.master_key1.rotation_first_message(&server_rotation);
-// Persist new_master_key1, increment rotation_version
+// key_refresh rounds 2-4 via Relay
+// Produces new Keyshare (same public key / address)
+// Persist new keyshare, increment rotation_version
 ```
 
 ---
@@ -384,16 +358,19 @@ let (rotation_party1_first_message, new_master_key1) =
 }
 ```
 
-**Server-side logic:**
+**Server-side logic (sign_start):**
 ```rust
-let session = get_session(session_id);
-let sign_message: party_two::SignMessage = serde_json::from_str(&client_payload)?;
-let signature = session.master_key1.sign_second_message(
-    &sign_message,
-    &client_eph_first_message,
-    &session.eph_ec_key_pair_party1,
-    &message,
-)?;
+let keyshare = load_keyshare(mpc_key_id);
+let setup = SignSetup::new(...)
+    .with_hash(message_hash_bytes)
+    .with_chain_path("m".parse()?);
+// Spawn sign::run(setup, seed, relay)
+```
+
+**Server-side logic (sign_continue):**
+```rust
+// DSG rounds 2-4 via Relay
+// Final round produces (Signature, RecoveryId)
 // Return r, s, recid
 ```
 
@@ -419,22 +396,18 @@ Exports Party1's private share. **Highly sensitive operation.**
 **result:**
 ```json
 {
-  "serverSharePrivate": {
-    "x1": "<serialized FE scalar>",
-    "paillier_priv": "<serialized DecryptionKey>",
-    "c_key_randomness": "<serialized BigInt>"
-  }
+  "serverKeyshare": "<Base64-encoded keyshare bytes>"
 }
 ```
 
 **Server-side logic:**
 ```rust
 verify_strong_auth(&request)?;
-let master_key1 = load_server_share(mpc_key_id)?;
-let server_share_private = serde_json::to_value(&master_key1.private)?;
+let keyshare = load_keyshare(mpc_key_id)?;
+let keyshare_b64 = base64::encode(keyshare.as_slice());
 mark_key_exported(mpc_key_id)?;
 audit_log("KEY_EXPORT", mpc_key_id, &request_context);
-// Client computes: full_private_key = x1 * x2 (mod n)
+// Client uses: key_export::combine_shares() to reconstruct private key
 ```
 
 **Post-export state:**
@@ -485,12 +458,12 @@ Standard JSON-RPC 2.0 error codes plus application-defined codes:
 | Concurrency | Each session is independent; no cross-session state |
 | Session data | Ephemeral cryptographic state (key pairs, commitments, witnesses) |
 
-## Share Storage (serverShare)
+## Share Storage (serverKeyshare)
 
 | Field | Description |
 |-------|-------------|
 | `mpcKeyId` | Unique identifier for the key pair |
-| `masterKey1` | Serialized MasterKey1 (JSON via serde) |
+| `keyshare` | Serialized Keyshare (Base64-encoded binary) |
 | `address` | Derived EVM address |
 | `publicKey` | Group public key (hex) |
 | `rotationVersion` | Incremented on each recovery/rotation |

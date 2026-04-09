@@ -13,16 +13,16 @@
         |  POST /rpc                          |
         |<----------------------------------->|
         |                                     |
-   Rust: kms-secp256k1                  Rust/Go/Any: kms-secp256k1
-   MasterKey2                           MasterKey1
-   deviceLiveShare                      serverShare
+   Rust: sl-dkls23                       Rust/Go/Any: DKLs23 compatible
+   Keyshare (client)                    Keyshare (server)
+   deviceKeyshare                       serverKeyshare
 ```
 
 服务端扮演两方 ECDSA 协议中的 **Party1** 角色，需要：
 1. 暴露一个 JSON-RPC 2.0 端点（如 `POST /rpc`）
 2. 处理 7 个方法：`keygen_start`、`keygen_continue`、`recovery_start`、`recovery_continue`、`sign_start`、`sign_continue`、`export_key`
-3. 运行 Party1 侧的密码学操作（kms-secp256k1）
-4. 安全存储 `serverShare`（MasterKey1）
+3. 运行 Party1 侧的 DKLs23 协议（sl-dkls23 或兼容实现）
+4. 安全存储 `serverKeyshare`（Keyshare）
 5. 管理协议轮次之间的临时会话状态
 
 ## JSON-RPC 2.0 协议
@@ -66,14 +66,13 @@
 ```toml
 # Cargo.toml（如果服务端使用 Rust）
 [dependencies]
-kms-secp256k1 = { git = "https://github.com/ZenGo-X/kms-secp256k1", tag = "v0.3.1", package = "kms" }
-multi-party-ecdsa = { git = "https://github.com/KZen-networks/multi-party-ecdsa", tag = "v0.4.6" }
-curv-kzen = { version = "0.7", default-features = false, features = ["rust-gmp-kzen"] }
-zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.3.12" }
-paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.10" }
+sl-dkls23 = "1.0.0-beta"
+sl-mpc-mate = "1.0.0-beta"
+tokio = { version = "1", features = ["rt", "macros"] }
+k256 = { version = "0.13", features = ["ecdsa"] }
 ```
 
-如果服务端不使用 Rust，需要通过 Rust FFI 桥接或使用这些库的兼容实现。
+如果服务端使用其他语言，需实现 DKLs23 兼容协议。传输格式使用不透明字节数组 -- 任何符合规范的实现均可工作。
 
 ---
 
@@ -90,9 +89,8 @@ paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3
   |                    |--------------------->|                      |
   |                    |                      |  RPC keygen_start    |
   |                    |                      |--------------------->|
-  |                    |                      |                      | MasterKey1::key_gen_first_message()
-  |                    |                      |                      | ChainCode1::chain_code_first_message()
-  |                    |                      |  result:             | 存储会话状态
+  |                    |                      |                      | DKG Round 1 (via Relay)
+  |                    |                      |  result:             | 存储会话
   |                    |                      |  {sessionId,         |
   |                    |                      |   serverPayload}     |
   |                    |                      |<---------------------|
@@ -102,9 +100,9 @@ paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3
   |                    |                      |  RPC keygen_continue |
   |                    |                      |  {clientPayload}     |
   |                    |                      |--------------------->|
-  |                    |                      |                      | MasterKey1::key_gen_second_message()
-  |                    |                      |                      | MasterKey1::set_master_key()
-  |                    |                      |  result:             | 持久化 MasterKey1
+  |                    |                      |                      | DKG Rounds 2-4 (via Relay)
+  |                    |                      |                      | → Keyshare
+  |                    |                      |  result:             | 持久化 Keyshare
   |                    |                      |  {serverPayload}     |
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -132,8 +130,8 @@ paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3
   |                    |                      |                      |
   |                    |                      |  RPC recovery_start  |
   |                    |                      |--------------------->|
-  |                    |                      |                      | 加载 MasterKey1
-  |                    |                      |                      | Rotation1::key_rotate_first_message()
+  |                    |                      |                      | 加载 Keyshare
+  |                    |                      |                      | key_refresh Round 1
   |                    |                      |  result: {sessionId, |
   |                    |                      |   serverPayload}     |
   |                    |                      |<---------------------|
@@ -142,8 +140,8 @@ paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3
   |                    |                      |                      |
   |                    |                      |  RPC recovery_continue
   |                    |                      |--------------------->|
-  |                    |                      |                      | 完成轮换
-  |                    |                      |  result:             | 持久化新 MasterKey1
+  |                    |                      |                      | key_refresh Rounds 2-4
+  |                    |                      |  result:             | 持久化新 Keyshare
   |                    |                      |  {serverPayload}     |
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -167,8 +165,8 @@ paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3
   |                    |--------------------->|                      |
   |                    |                      |  RPC sign_start      |
   |                    |                      |--------------------->|
-  |                    |                      |                      | 加载 MasterKey1
-  |                    |                      |  result: {sessionId, | 生成临时密钥
+  |                    |                      |                      | 加载 Keyshare
+  |                    |                      |  result: {sessionId, | DSG Round 1
   |                    |                      |   serverPayload}     |
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -176,7 +174,7 @@ paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3
   |                    |                      |                      |
   |                    |                      |  RPC sign_continue   |
   |                    |                      |--------------------->|
-  |                    |                      |                      | 完成签名
+  |                    |                      |                      | DSG Rounds 2-4
   |                    |                      |  result: {r, s, recid}
   |                    |                      |<---------------------|
   |                    |                      |                      |
@@ -211,11 +209,10 @@ paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3
 
 **服务端逻辑：**
 ```rust
-let (kg_party_one_first_message, kg_comm_witness, kg_ec_key_pair_party1) =
-    MasterKey1::key_gen_first_message();
-let (cc_party_one_first_message, cc_comm_witness, cc_ec_key_pair1) =
-    ChainCode1::chain_code_first_message();
-// 存储会话: { kg_comm_witness, kg_ec_key_pair_party1, cc_comm_witness, cc_ec_key_pair1 }
+let setup = KeygenSetup::new(inst, sk, 1, vk_list, &[0, 0], 2);
+// 服务端作为 Party1 (party_id=1) 运行 2-of-2 DKLs23
+// 异步启动 keygen::dkg::run(setup, seed, relay)
+// 第一轮消息通过 Relay trait 发送
 ```
 
 ---
@@ -247,28 +244,11 @@ let (cc_party_one_first_message, cc_comm_witness, cc_ec_key_pair1) =
 
 **服务端逻辑：**
 ```rust
-let session = get_session(session_id);
-let (kg_party_one_second_message, party_one_paillier, party_one_private) =
-    MasterKey1::key_gen_second_message(
-        session.kg_comm_witness.clone(),
-        &session.kg_ec_key_pair_party1,
-        &client_payload.kg_party_two_first_message.d_log_proof,
-    );
-let cc_party_one_second_message = ChainCode1::chain_code_second_message(
-    session.cc_comm_witness,
-    &client_payload.cc_party_two_first_message.d_log_proof,
-);
-let party1_cc = ChainCode1::compute_chain_code(
-    &session.cc_ec_key_pair1,
-    &client_payload.cc_party_two_first_message.public_share,
-);
-let master_key1 = MasterKey1::set_master_key(
-    &party1_cc.chain_code, party_one_private,
-    &session.kg_comm_witness.public_share,
-    &client_payload.kg_party_two_first_message.public_share,
-    party_one_paillier,
-);
-// 持久化 master_key1 作为 serverShare
+// DKLs23 协议第 2-4 轮通过 Relay 处理
+// 每次 continue 调用推进协议状态
+// 最终轮产出 Keyshare
+let keyshare_b64 = base64::encode(keyshare.as_slice());
+// 持久化 keyshare_b64
 ```
 
 ---
@@ -294,9 +274,9 @@ let master_key1 = MasterKey1::set_master_key(
 
 **服务端逻辑：**
 ```rust
-let master_key1 = load_server_share(mpc_key_id);
-let (coin_flip_party1_first_message, m1, r1) = Rotation1::key_rotate_first_message();
-// 存储会话: { master_key1, m1, r1 }
+let keyshare = load_keyshare(mpc_key_id);
+let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
+// 异步启动 key_refresh::run(setup, seed, relay, kfr)
 ```
 
 ---
@@ -327,15 +307,9 @@ let (coin_flip_party1_first_message, m1, r1) = Rotation1::key_rotate_first_messa
 
 **服务端逻辑：**
 ```rust
-let session = get_session(session_id);
-let (coin_flip_party1_second_message, server_rotation) =
-    Rotation1::key_rotate_second_message(
-        &client_payload.coin_flip_party2_first_message,
-        &session.m1, &session.r1,
-    );
-let (rotation_party1_first_message, new_master_key1) =
-    session.master_key1.rotation_first_message(&server_rotation);
-// 持久化 new_master_key1，递增 rotation_version
+// key_refresh 第 2-4 轮通过 Relay 处理
+// 产出新 Keyshare（公钥/地址不变）
+// 持久化新 keyshare，递增 rotation_version
 ```
 
 ---
@@ -384,16 +358,19 @@ let (rotation_party1_first_message, new_master_key1) =
 }
 ```
 
-**服务端逻辑：**
+**服务端逻辑（sign_start）：**
 ```rust
-let session = get_session(session_id);
-let sign_message: party_two::SignMessage = serde_json::from_str(&client_payload)?;
-let signature = session.master_key1.sign_second_message(
-    &sign_message,
-    &client_eph_first_message,
-    &session.eph_ec_key_pair_party1,
-    &message,
-)?;
+let keyshare = load_keyshare(mpc_key_id);
+let setup = SignSetup::new(...)
+    .with_hash(message_hash_bytes)
+    .with_chain_path("m".parse()?);
+// 异步启动 sign::run(setup, seed, relay)
+```
+
+**服务端逻辑（sign_continue）：**
+```rust
+// DSG 第 2-4 轮通过 Relay 处理
+// 最终轮产出 (Signature, RecoveryId)
 // 返回 r, s, recid
 ```
 
@@ -419,22 +396,18 @@ let signature = session.master_key1.sign_second_message(
 **result：**
 ```json
 {
-  "serverSharePrivate": {
-    "x1": "<序列化的 FE 标量>",
-    "paillier_priv": "<序列化的 DecryptionKey>",
-    "c_key_randomness": "<序列化的 BigInt>"
-  }
+  "serverKeyshare": "<Base64-encoded keyshare bytes>"
 }
 ```
 
 **服务端逻辑：**
 ```rust
 verify_strong_auth(&request)?;
-let master_key1 = load_server_share(mpc_key_id)?;
-let server_share_private = serde_json::to_value(&master_key1.private)?;
+let keyshare = load_keyshare(mpc_key_id)?;
+let keyshare_b64 = base64::encode(keyshare.as_slice());
 mark_key_exported(mpc_key_id)?;
 audit_log("KEY_EXPORT", mpc_key_id, &request_context);
-// 客户端将计算: full_private_key = x1 * x2 (mod n)
+// 客户端使用: key_export::combine_shares() 重建私钥
 ```
 
 **导出后状态：**
@@ -485,12 +458,12 @@ JSON-RPC 2.0 标准错误码 + 应用自定义错误码：
 | 并发 | 每个会话独立；无跨会话状态 |
 | 会话数据 | 临时密码学状态（密钥对、承诺、见证） |
 
-## Share 存储（serverShare）
+## Share 存储（serverKeyshare）
 
 | 字段 | 说明 |
 |------|------|
 | `mpcKeyId` | 密钥对的唯一标识 |
-| `masterKey1` | 序列化的 MasterKey1（通过 serde JSON） |
+| `keyshare` | 序列化的 Keyshare（Base64 编码二进制） |
 | `address` | 派生的 EVM 地址 |
 | `publicKey` | 联合公钥（hex） |
 | `rotationVersion` | 每次恢复/轮换时递增 |
