@@ -112,7 +112,7 @@ Success criteria:
 - [x] **Phase 9: DKG Keygen 4 轮协议** - 基于 dkls23-ll 实现完整 4 轮 keygen，产出 Keyshare + EVM 地址，建立 Rust 双方模拟测试框架 (completed 2026-04-09)
 - [x] **Phase 10: DSG Signing 4 轮协议** - 基于 dkls23-ll 实现 4 轮 signing，含 recid 计算，强制 PreSignature 一次性销毁 (completed 2026-04-09)
 - [x] **Phase 11: Key Rotation/Recovery 4 轮协议** - 基于 dkls23-ll 实现 4 轮 rotation/recovery，建立 Session TTL 超时驱逐机制 (completed 2026-04-09)
-- [ ] **Phase 12: Backup Envelope 与 Key Export** - 适配 Keyshare 序列化格式的 backup envelope，实现 s_i 合并私钥重建
+- [x] **Phase 12: Backup Envelope 与 Key Export** - 适配 Keyshare 序列化格式的 backup envelope，实现 s_i 合并私钥重建 (completed 2026-04-09)
 - [ ] **Phase 13: FRB Codegen + Dart 层适配 + CI 门控** - 重新生成 FRB 绑定，Dart MpcEngine 适配 4 轮模型，配置 CI 交叉编译产物发布
 
 ## Phase Details
@@ -204,7 +204,7 @@ Plans:
 
 Plans:
 - [x] 12-01-PLAN.md — Backup envelope roundtrip 集成测试 + 错误路径测试 (AUX-01)
-- [ ] 12-02-PLAN.md — export_private_key Lagrange 插值实现 + EXPORTED_KEYS 签名守卫 + 导出集成测试 (AUX-02)
+- [x] 12-02-PLAN.md — export_private_key Lagrange 插值实现 + EXPORTED_KEYS 签名守卫 + 导出集成测试 (AUX-02)
 
 ### Phase 13: FRB Codegen + Dart 层适配 + CI 门控
 **Goal**: Flutter 层 MpcEngine/MpcClient API 适配 4 轮协议模型，CI 自动构建并发布 iOS XCFramework 和 Android .so 产物
@@ -228,5 +228,5 @@ Plans:
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
 | 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
-| 12. Backup Envelope 与 Key Export | 1/2 | In Progress|  |
+| 12. Backup Envelope 与 Key Export | 2/2 | Complete   | 2026-04-09 |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Ready to execute
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-04-09T04:44:36.869Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-04-09T04:50:05.849Z"
 progress:
   total_phases: 13
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 12
-  completed_plans: 11
-  percent: 92
+  completed_plans: 12
+  percent: 100
 ---
 
 ## Current Position
@@ -44,6 +44,9 @@ Next: Phase 9
 - [Phase 11]: handle_msg3 returns KeygenMsg4 directly (not Vec) — must not index with [0] in rotation tests
 - [Phase 11]: test_rotation_version_increments uses session-layer simulation without full API WireEnvelope — simpler and equally valid
 - [Phase 12]: TDD 流程直接进入 GREEN — backup 实现已存在，test_backup_export.rs 首次运行即通过
+- [Phase 12]: Use JSON intermediate struct (KeyshareExportFields) to access pub(crate) s_i — serde serializes all fields regardless of visibility
+- [Phase 12]: EXPORTED_KEYS keyed by compressed public key hex in session.rs — consistent guard pattern with SIGN_SESSIONS
+- [Phase 12]: Lagrange 2-of-2 implemented manually with k256::Scalar — no sl_mpc_mate dependency needed for rank=0
 
 ## Performance Metrics
 
@@ -58,8 +61,9 @@ Next: Phase 9
 | Phase 11 P01 | 166s | 2 tasks | 2 files |
 | Phase 11 P02 | 233s | 1 tasks | 1 files |
 | Phase 12 P01 | 39s | 1 tasks | 1 files |
+| Phase 12 P02 | 206s | 2 tasks | 3 files |
 
 ## Last Session
 
-Stopped at: Completed 12-01-PLAN.md
+Stopped at: Completed 12-02-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z
