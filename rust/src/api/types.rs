@@ -63,3 +63,81 @@ pub struct ExportResult {
     pub address: String,
     pub exported: bool,
 }
+
+/// 32 字节消息摘要的安全类型包装。
+/// 防止将任意 Vec<u8> 直接传入签名函数。
+/// 不实现 From<Vec<u8>>、From<&[u8]> 或 From<[u8; 32]>。
+#[derive(Debug, Clone, Copy)]
+pub struct MessageDigest([u8; 32]);
+
+impl MessageDigest {
+    /// 从精确的 32 字节数组构造。
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// 从 hex string 构造（FRB Dart 侧传入路径）。
+    pub fn from_hex(s: &str) -> Result<Self, String> {
+        let bytes = hex::decode(s)
+            .map_err(|e| format!("hex decode failed: {e}"))?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| "message digest must be exactly 32 bytes".to_string())?;
+        Ok(Self(arr))
+    }
+
+    /// 获取底层字节（传给 dkls23-ll create_partial_signature）。
+    pub fn into_bytes(self) -> [u8; 32] {
+        self.0
+    }
+
+    /// 引用底层字节。
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_message_digest_new_succeeds() {
+        let bytes = [0u8; 32];
+        let digest = MessageDigest::new(bytes);
+        assert_eq!(digest.into_bytes(), bytes);
+    }
+
+    #[test]
+    fn test_message_digest_from_hex_valid() {
+        let hex_str = "00".repeat(32);
+        let result = MessageDigest::from_hex(&hex_str);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_message_digest_from_hex_31_bytes_fails() {
+        let hex_str = "00".repeat(31);
+        let result = MessageDigest::from_hex(&hex_str);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_message_digest_from_hex_33_bytes_fails() {
+        let hex_str = "00".repeat(33);
+        let result = MessageDigest::from_hex(&hex_str);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_message_digest_from_hex_invalid_hex_fails() {
+        let result = MessageDigest::from_hex("not_hex");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_message_digest_from_hex_empty_fails() {
+        let result = MessageDigest::from_hex("");
+        assert!(result.is_err());
+    }
+}
