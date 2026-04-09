@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Ready to execute
-stopped_at: Completed 10-01-PLAN.md
-last_updated: "2026-04-09T03:48:30.867Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 10-02-PLAN.md
+last_updated: "2026-04-09T03:53:44.053Z"
 progress:
   total_phases: 13
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
-  percent: 88
+  completed_plans: 8
+  percent: 100
 ---
 
 ## Current Position
@@ -35,6 +35,8 @@ Next: Phase 9
 - [Phase 10]: DerivationPath::from_str('m') as default master path for DSG signing (no BIP-32 derivation)
 - [Phase 10]: MessageDigest is Copy — into_bytes() in Round 3 does not invalidate session.digest for Round 4
 - [Phase 10]: SEC-01: Round 3 removes session from SIGN_SESSIONS before PreSignature creation, re-inserts with consumed=true
+- [Phase 10]: session module changed from pub(crate) to pub to allow integration test access to SIGN_SESSIONS for SEC-01 validation
+- [Phase 10]: SEC-01 test uses session layer simulation rather than API-layer WireEnvelope construction — simpler and equally valid for runtime enforcement validation
 
 ## Performance Metrics
 
@@ -45,8 +47,9 @@ Next: Phase 9
 | Phase 09 P01 | 900s | 2 tasks | 4 files |
 | Phase 09 P02 | 70s | 1 tasks | 2 files |
 | Phase 10 P01 | 225s | 2 tasks | 3 files |
+| Phase 10 P02 | 208s | 1 tasks | 2 files |
 
 ## Last Session
 
-Stopped at: Completed 10-01-PLAN.md
+Stopped at: Completed 10-02-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z

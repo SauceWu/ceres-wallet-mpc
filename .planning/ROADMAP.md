@@ -110,7 +110,7 @@ Success criteria:
 - [ ] **Phase 7: 依赖替换与本地双平台编译** - 用 dkls23-ll 彻底替换 kms-secp256k1/curv-kzen/GMP，验证 iOS + Android 本地 cargo build 通过
 - [x] **Phase 8: Wire Format 与安全类型定义** - 定义 DKG/DSG/Rotation 各轮 JSON wire format 结构，引入 MessageDigest newtype 防止原始字节误传 (completed 2026-04-09)
 - [x] **Phase 9: DKG Keygen 4 轮协议** - 基于 dkls23-ll 实现完整 4 轮 keygen，产出 Keyshare + EVM 地址，建立 Rust 双方模拟测试框架 (completed 2026-04-09)
-- [ ] **Phase 10: DSG Signing 4 轮协议** - 基于 dkls23-ll 实现 4 轮 signing，含 recid 计算，强制 PreSignature 一次性销毁
+- [x] **Phase 10: DSG Signing 4 轮协议** - 基于 dkls23-ll 实现 4 轮 signing，含 recid 计算，强制 PreSignature 一次性销毁 (completed 2026-04-09)
 - [ ] **Phase 11: Key Rotation/Recovery 4 轮协议** - 基于 dkls23-ll 实现 4 轮 rotation/recovery，建立 Session TTL 超时驱逐机制
 - [ ] **Phase 12: Backup Envelope 与 Key Export** - 适配 Keyshare 序列化格式的 backup envelope，实现 s_i 合并私钥重建
 - [ ] **Phase 13: FRB Codegen + Dart 层适配 + CI 门控** - 重新生成 FRB 绑定，Dart MpcEngine 适配 4 轮模型，配置 CI 交叉编译产物发布
@@ -174,7 +174,7 @@ Plans:
 
 Plans:
 - [x] 10-01-PLAN.md — SignSession 实体 + derivation-path 依赖 + sign_start/sign_continue DSG 状态机 + recid 计算 (PROTO-02, SEC-01)
-- [ ] 10-02-PLAN.md — DSG 双方模拟集成测试 + ecrecover 验证 + consumed session 拒绝测试 (PROTO-02, SEC-01)
+- [x] 10-02-PLAN.md — DSG 双方模拟集成测试 + ecrecover 验证 + consumed session 拒绝测试 (PROTO-02, SEC-01)
 
 ### Phase 11: Key Rotation/Recovery 4 轮协议
 **Goal**: 基于 dkls23-ll 的 4 轮 rotation 协议完整运行，Session 具备 TTL 超时驱逐能力，rotationVersion 正确递增
@@ -218,7 +218,7 @@ Plans:
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
-| 10. DSG Signing 4 轮协议 | 1/2 | In Progress|  |
+| 10. DSG Signing 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
