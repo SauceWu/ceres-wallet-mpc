@@ -129,8 +129,8 @@ Success criteria:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Cargo.toml 依赖替换 + build.rs 删除 + session.rs/mpc_engine.rs stub 化 + vendor/gmp 清理 (INFRA-01)
-- [ ] 07-02-PLAN.md — Android NDK 配置 + iOS/Android 双平台 cargo check 验证 (INFRA-02)
+- [x] 07-01-PLAN.md — Cargo.toml 依赖替换 + build.rs 删除 + session.rs/mpc_engine.rs stub 化 + vendor/gmp 清理 (INFRA-01)
+- [x] 07-02-PLAN.md — Android NDK 配置 + iOS/Android 双平台 cargo check 验证 (INFRA-02)
 
 ### Phase 8: Wire Format 与安全类型定义
 **Goal**: 所有协议轮次的 JSON wire format 已定案，MessageDigest newtype 已在 Rust 边界强制使用，后续 PROTO 阶段可直接引用
@@ -140,7 +140,11 @@ Plans:
   1. DKG、DSG、Rotation 各轮的 JSON 结构已在 `.planning/` 或 Rust 类型注释中记录并冻结
   2. Rust 代码中签名函数入参类型为 `MessageDigest` 而非 `Vec<u8>` 或 `[u8; 32]`
   3. 传入原始 `Vec<u8>` 给签名函数会产生编译错误
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — MessageDigest newtype 定义 + sign_start 签名更新 + 单元测试 (SEC-03)
+- [ ] 08-02-PLAN.md — WireEnvelope/ProtocolType 类型 + WIRE-FORMAT.md 冻结规范文档 (INFRA-04)
 
 ### Phase 9: DKG Keygen 4 轮协议
 **Goal**: 基于 dkls23-ll 的 4 轮 DKG 协议完整运行，产出合法 Keyshare 和可验证的 EVM 地址，Rust 双方模拟测试框架就位
@@ -204,7 +208,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
-| 8. Wire Format 与安全类型定义 | 0/? | Not started | - |
+| 8. Wire Format 与安全类型定义 | 0/2 | Planning complete | - |
 | 9. DKG Keygen 4 轮协议 | 0/? | Not started | - |
 | 10. DSG Signing 4 轮协议 | 0/? | Not started | - |
 | 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
