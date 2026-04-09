@@ -23,7 +23,7 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 
 ### Auxiliary
 
-- [ ] **AUX-01**: Backup Envelope 适配 Keyshare 序列化格式（AES-256-GCM 逻辑不变）
+- [x] **AUX-01**: Backup Envelope 适配 Keyshare 序列化格式（AES-256-GCM 逻辑不变）
 - [ ] **AUX-02**: Key Export 私钥重建（s_i 合并，Lagrange 插值）
 
 ### Security
@@ -75,7 +75,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROTO-01 | Phase 9 | Complete |
 | PROTO-02 | Phase 10 | Complete |
 | PROTO-03 | Phase 11 | Complete |
-| AUX-01 | Phase 12 | Pending |
+| AUX-01 | Phase 12 | Complete |
 | AUX-02 | Phase 12 | Pending |
 | SEC-01 | Phase 10 | Complete |
 | SEC-02 | Phase 11 | Complete |

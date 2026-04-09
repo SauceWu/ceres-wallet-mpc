@@ -203,7 +203,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Backup envelope roundtrip 集成测试 + 错误路径测试 (AUX-01)
+- [x] 12-01-PLAN.md — Backup envelope roundtrip 集成测试 + 错误路径测试 (AUX-01)
 - [ ] 12-02-PLAN.md — export_private_key Lagrange 插值实现 + EXPORTED_KEYS 签名守卫 + 导出集成测试 (AUX-02)
 
 ### Phase 13: FRB Codegen + Dart 层适配 + CI 门控
@@ -228,5 +228,5 @@ Plans:
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
 | 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
-| 12. Backup Envelope 与 Key Export | 0/2 | Planning complete | - |
+| 12. Backup Envelope 与 Key Export | 1/2 | In Progress|  |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |

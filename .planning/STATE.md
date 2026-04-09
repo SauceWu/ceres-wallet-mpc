@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Phase complete — ready for verification
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-04-09T04:23:30.458Z"
+status: Ready to execute
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-04-09T04:44:36.869Z"
 progress:
   total_phases: 13
   completed_phases: 5
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
+  total_plans: 12
+  completed_plans: 11
+  percent: 92
 ---
 
 ## Current Position
 
-Phase: 11 (Key Rotation/Recovery 4 轮协议) — EXECUTING
+Phase: 12 (Backup Envelope 与 Key Export) — EXECUTING
 Plan: 2 of 2
 Completed Plan: 08-02 (WireEnvelope JSON 信封格式与冻结规范)
 Next: Phase 9
@@ -43,6 +43,7 @@ Next: Phase 9
 - [Phase 11]: current_rotation_version stored in RecoverySession, only incremented in Round 4 RecoveryCompletedPayload
 - [Phase 11]: handle_msg3 returns KeygenMsg4 directly (not Vec) — must not index with [0] in rotation tests
 - [Phase 11]: test_rotation_version_increments uses session-layer simulation without full API WireEnvelope — simpler and equally valid
+- [Phase 12]: TDD 流程直接进入 GREEN — backup 实现已存在，test_backup_export.rs 首次运行即通过
 
 ## Performance Metrics
 
@@ -56,8 +57,9 @@ Next: Phase 9
 | Phase 10 P02 | 208s | 1 tasks | 2 files |
 | Phase 11 P01 | 166s | 2 tasks | 2 files |
 | Phase 11 P02 | 233s | 1 tasks | 1 files |
+| Phase 12 P01 | 39s | 1 tasks | 1 files |
 
 ## Last Session
 
-Stopped at: Completed 11-02-PLAN.md
+Stopped at: Completed 12-01-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z
