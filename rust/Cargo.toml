@@ -11,7 +11,12 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.12.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-dkls23-ll = { git = "https://github.com/silence-laboratories/silent-shard-dkls23-ll", tag = "v1.1.4" }
+sl-dkls23 = { version = "1.0.0-beta", features = ["test-support"] }
+sl-mpc-mate = { version = "1.0.0-beta", features = ["simple-relay"] }
+sl-oblivious = "=1.0.0-beta"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+rand_chacha = "0.3"
 tiny-keccak = { version = "2", features = ["keccak"] }
 hex = "0.4"
 k256 = { version = "0.13", features = ["ecdsa"] }
