@@ -72,11 +72,13 @@ class MpcEngine {
   Future<MpcRoundResult> signStart(
     String sessionId,
     String share,
+    String messageHashHex,
     String serverPayload,
   ) async {
     final result = await _api.crateApiMpcEngineSignStart(
       sessionId: sessionId,
       share: share,
+      messageHashHex: messageHashHex,
       serverPayload: serverPayload,
     );
     return MpcRoundResult.fromJson(

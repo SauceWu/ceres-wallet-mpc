@@ -175,6 +175,7 @@ class MpcClient {
     final round1 = await _engine.signStart(
       sessionId,
       localEncryptedShare,
+      messageHash,
       jsonEncode(initData['serverPayload']),
     );
     _checkProtocolError(round1);

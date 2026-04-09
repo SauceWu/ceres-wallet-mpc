@@ -3,84 +3,177 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
-
 // Static analysis wrongly picks the IO variant, thus ignore this
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/address.dart';
 import 'api/mpc_engine.dart';
 import 'api/simple.dart';
+import 'api/types.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
+import 'lib.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 
+abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
+  RustLibApiImplPlatform({
+    required super.handler,
+    required super.wire,
+    required super.generalizedFrbRustBinding,
+    required super.portManager,
+  });
 
+  @protected
+  String dco_decode_String(dynamic raw);
 
+  @protected
+  MessageDigest dco_decode_box_autoadd_message_digest(dynamic raw);
 
-                abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
-                  RustLibApiImplPlatform({
-                    required super.handler,
-                    required super.wire,
-                    required super.generalizedFrbRustBinding,
-                    required super.portManager,
-                  });
+  @protected
+  int dco_decode_box_autoadd_u_8(dynamic raw);
 
-                  
+  @protected
+  int dco_decode_i_32(dynamic raw);
 
-                  @protected String dco_decode_String(dynamic raw);
+  @protected
+  List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
-@protected int dco_decode_i_32(dynamic raw);
+  @protected
+  Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
-@protected List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
+  @protected
+  MessageDigest dco_decode_message_digest(dynamic raw);
 
-@protected Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+  @protected
+  String? dco_decode_opt_String(dynamic raw);
 
-@protected int dco_decode_u_8(dynamic raw);
+  @protected
+  int? dco_decode_opt_box_autoadd_u_8(dynamic raw);
 
-@protected void dco_decode_unit(dynamic raw);
+  @protected
+  ProtocolType dco_decode_protocol_type(dynamic raw);
 
-@protected String sse_decode_String(SseDeserializer deserializer);
+  @protected
+  int dco_decode_u_8(dynamic raw);
 
-@protected int sse_decode_i_32(SseDeserializer deserializer);
+  @protected
+  U8Array32 dco_decode_u_8_array_32(dynamic raw);
 
-@protected List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
+  @protected
+  void dco_decode_unit(dynamic raw);
 
-@protected Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+  @protected
+  WireEnvelope dco_decode_wire_envelope(dynamic raw);
 
-@protected int sse_decode_u_8(SseDeserializer deserializer);
+  @protected
+  String sse_decode_String(SseDeserializer deserializer);
 
-@protected void sse_decode_unit(SseDeserializer deserializer);
+  @protected
+  MessageDigest sse_decode_box_autoadd_message_digest(
+    SseDeserializer deserializer,
+  );
 
-@protected bool sse_decode_bool(SseDeserializer deserializer);
+  @protected
+  int sse_decode_box_autoadd_u_8(SseDeserializer deserializer);
 
-@protected void sse_encode_String(String self, SseSerializer serializer);
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer);
 
-@protected void sse_encode_i_32(int self, SseSerializer serializer);
+  @protected
+  List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
-@protected void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
+  @protected
+  Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
-@protected void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
+  @protected
+  MessageDigest sse_decode_message_digest(SseDeserializer deserializer);
 
-@protected void sse_encode_u_8(int self, SseSerializer serializer);
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
 
-@protected void sse_encode_unit(void self, SseSerializer serializer);
+  @protected
+  int? sse_decode_opt_box_autoadd_u_8(SseDeserializer deserializer);
 
-@protected void sse_encode_bool(bool self, SseSerializer serializer);
-                }
-                
+  @protected
+  ProtocolType sse_decode_protocol_type(SseDeserializer deserializer);
 
+  @protected
+  int sse_decode_u_8(SseDeserializer deserializer);
+
+  @protected
+  U8Array32 sse_decode_u_8_array_32(SseDeserializer deserializer);
+
+  @protected
+  void sse_decode_unit(SseDeserializer deserializer);
+
+  @protected
+  WireEnvelope sse_decode_wire_envelope(SseDeserializer deserializer);
+
+  @protected
+  bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  void sse_encode_String(String self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_message_digest(
+    MessageDigest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_u_8(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_prim_u_8_strict(
+    Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_message_digest(MessageDigest self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_8(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_protocol_type(ProtocolType self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_8(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_8_array_32(U8Array32 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_wire_envelope(WireEnvelope self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bool(bool self, SseSerializer serializer);
+}
 
 // Section: wire_class
 
 class RustLibWire implements BaseWire {
-            RustLibWire.fromExternalLibrary(ExternalLibrary lib);
+  RustLibWire.fromExternalLibrary(ExternalLibrary lib);
+}
 
-            
-        }
-        @JS('wasm_bindgen') external RustLibWasmModule get wasmModule;
+@JS('wasm_bindgen')
+external RustLibWasmModule get wasmModule;
 
-        @JS() @anonymous extension type RustLibWasmModule._(JSObject _) implements JSObject {
-            
-        }
-        
+@JS()
+@anonymous
+extension type RustLibWasmModule._(JSObject _) implements JSObject {}

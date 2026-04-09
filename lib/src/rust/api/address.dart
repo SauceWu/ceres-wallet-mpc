@@ -6,14 +6,11 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-
-            
-
-            /// Derive an EIP-55 checksummed EVM address from an uncompressed secp256k1 public key.
+/// Derive an EIP-55 checksummed EVM address from an uncompressed secp256k1 public key.
 ///
 /// Input: 65-byte uncompressed public key (0x04 prefix + 64 bytes X,Y coordinates)
 /// Process: Keccak-256 hash of the 64 bytes (skip 0x04) -> take last 20 bytes -> EIP-55 checksum
-Future<String>  deriveEvmAddress({required List<int> uncompressedPubkey }) => RustLib.instance.api.crateApiAddressDeriveEvmAddress(uncompressedPubkey: uncompressedPubkey);
-
-            
-            
+Future<String> deriveEvmAddress({required List<int> uncompressedPubkey}) =>
+    RustLib.instance.api.crateApiAddressDeriveEvmAddress(
+      uncompressedPubkey: uncompressedPubkey,
+    );

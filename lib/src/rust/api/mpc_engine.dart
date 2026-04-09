@@ -6,54 +6,104 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `decode_cbor_base64`, `decrypt_share`, `derive_aes_key`, `encode_cbor_base64`, `encrypt_share`, `lagrange_coeff_2of2`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `KeyshareExportFields`
 
-            // These functions are ignored because they are not marked as `pub`: `decrypt_share`, `derive_aes_key`, `encrypt_share`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `KeygenRound1ClientPayload`, `KeygenRound1ServerPayload`, `KeygenRound2ServerPayload`, `RecoveryRound1ClientPayload`, `RecoveryRound1ServerPayload`, `RecoveryRound2ServerPayload`, `SignRound1ClientPayload`, `SignRound1ServerPayload`
+/// DKG 协议启动入口。
+/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含 KeygenMsg1）
+/// 返回: MpcRoundResult JSON (status="in_progress", round=2, client_payload=WireEnvelope JSON)
+Future<String> keygenStart({
+  required String sessionId,
+  required String serverPayload,
+}) => RustLib.instance.api.crateApiMpcEngineKeygenStart(
+  sessionId: sessionId,
+  serverPayload: serverPayload,
+);
 
+/// DKG 协议轮次推进入口。
+/// server_payload: 服务端当前轮次 WireEnvelope JSON
+/// 返回: MpcRoundResult JSON（in_progress 或 completed）
+Future<String> keygenContinue({
+  required String sessionId,
+  required String serverPayload,
+}) => RustLib.instance.api.crateApiMpcEngineKeygenContinue(
+  sessionId: sessionId,
+  serverPayload: serverPayload,
+);
 
-            /// Keygen round 1: receive server's first messages, return client's first messages.
-/// Real kms-secp256k1 two-party ECDSA implementation.
-Future<String>  keygenStart({required String sessionId , required String serverPayload }) => RustLib.instance.api.crateApiMpcEngineKeygenStart(sessionId: sessionId, serverPayload: serverPayload);
+Future<String> recoverStart({
+  required String sessionId,
+  required String backupShare,
+  required String serverPayload,
+  required int currentRotationVersion,
+}) => RustLib.instance.api.crateApiMpcEngineRecoverStart(
+  sessionId: sessionId,
+  backupShare: backupShare,
+  serverPayload: serverPayload,
+  currentRotationVersion: currentRotationVersion,
+);
 
-/// Keygen round 2: verify server's second messages, assemble MasterKey2.
-Future<String>  keygenContinue({required String sessionId , required String serverPayload }) => RustLib.instance.api.crateApiMpcEngineKeygenContinue(sessionId: sessionId, serverPayload: serverPayload);
+Future<String> recoverContinue({
+  required String sessionId,
+  required String serverPayload,
+}) => RustLib.instance.api.crateApiMpcEngineRecoverContinue(
+  sessionId: sessionId,
+  serverPayload: serverPayload,
+);
 
-/// Recovery round 1: receive backup share + server's coin-flip first message.
-Future<String>  recoverStart({required String sessionId , required String backupShare , required String serverPayload , required int currentRotationVersion }) => RustLib.instance.api.crateApiMpcEngineRecoverStart(sessionId: sessionId, backupShare: backupShare, serverPayload: serverPayload, currentRotationVersion: currentRotationVersion);
+/// DSG 协议启动入口。
+/// share: JSON-serialized Keyshare（来自本地安全存储）
+/// message_hash_hex: 32 字节消息摘要的 hex 编码（SEC-03 边界验证）
+/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含 SignMsg1）
+/// 返回: MpcRoundResult JSON (status="in_progress", round=2, client_payload=WireEnvelope JSON)
+Future<String> signStart({
+  required String sessionId,
+  required String share,
+  required String messageHashHex,
+  required String serverPayload,
+}) => RustLib.instance.api.crateApiMpcEngineSignStart(
+  sessionId: sessionId,
+  share: share,
+  messageHashHex: messageHashHex,
+  serverPayload: serverPayload,
+);
 
-/// Recovery round 2: complete coin-flip, apply rotation to get new MasterKey2.
-Future<String>  recoverContinue({required String sessionId , required String serverPayload }) => RustLib.instance.api.crateApiMpcEngineRecoverContinue(sessionId: sessionId, serverPayload: serverPayload);
-
-/// Sign round 1: deserialize MasterKey2 from share, generate Party2 ephemeral,
-/// store session state, return Party2 ephemeral first message.
-Future<String>  signStart({required String sessionId , required String share , required String serverPayload }) => RustLib.instance.api.crateApiMpcEngineSignStart(sessionId: sessionId, share: share, serverPayload: serverPayload);
-
-/// Sign round 2: retrieve session, compute Party2 partial sig (SignMessage).
-/// Returns SignMessage JSON as client_payload — server uses this to complete signing.
-Future<String>  signContinue({required String sessionId , required String serverPayload }) => RustLib.instance.api.crateApiMpcEngineSignContinue(sessionId: sessionId, serverPayload: serverPayload);
+/// DSG 协议轮次推进入口。
+/// server_payload: 服务端当前轮次 WireEnvelope JSON
+/// 返回: MpcRoundResult JSON（in_progress 或 completed）
+Future<String> signContinue({
+  required String sessionId,
+  required String serverPayload,
+}) => RustLib.instance.api.crateApiMpcEngineSignContinue(
+  sessionId: sessionId,
+  serverPayload: serverPayload,
+);
 
 /// Derive a backup envelope from a live share and user secret.
 /// Uses AES-256-GCM with HKDF-SHA256 key derivation.
-Future<String>  deriveBackupEnvelope({required String localEncryptedShare , required String userBackupSecret , required String createdAt }) => RustLib.instance.api.crateApiMpcEngineDeriveBackupEnvelope(localEncryptedShare: localEncryptedShare, userBackupSecret: userBackupSecret, createdAt: createdAt);
+Future<String> deriveBackupEnvelope({
+  required String localEncryptedShare,
+  required String userBackupSecret,
+  required String createdAt,
+}) => RustLib.instance.api.crateApiMpcEngineDeriveBackupEnvelope(
+  localEncryptedShare: localEncryptedShare,
+  userBackupSecret: userBackupSecret,
+  createdAt: createdAt,
+);
 
 /// Decrypt a backup envelope to recover the device backup share.
-Future<String>  decryptBackupShare({required String encryptedEnvelope , required String userBackupSecret }) => RustLib.instance.api.crateApiMpcEngineDecryptBackupShare(encryptedEnvelope: encryptedEnvelope, userBackupSecret: userBackupSecret);
+Future<String> decryptBackupShare({
+  required String encryptedEnvelope,
+  required String userBackupSecret,
+}) => RustLib.instance.api.crateApiMpcEngineDecryptBackupShare(
+  encryptedEnvelope: encryptedEnvelope,
+  userBackupSecret: userBackupSecret,
+);
 
-/// Export full private key by combining Party1 and Party2 secret shares.
-///
-/// In Lindell 2017 two-party ECDSA:
-/// - Party1 holds x1 (FE scalar)
-/// - Party2 holds x2 (FE scalar)
-/// - Group public key Q = x1 * x2 * G
-/// - Full private key = x1 * x2 (mod n)
-///
-/// # Arguments
-/// - local_share: serialized MasterKey2 JSON (contains Party2's private x2)
-/// - server_share_private: serialized Party1Private JSON (server sends this for export)
-///
-/// # Returns
-/// JSON-serialized ExportResult{private_key, address, exported}
-Future<String>  exportPrivateKey({required String localShare , required String serverSharePrivate }) => RustLib.instance.api.crateApiMpcEngineExportPrivateKey(localShare: localShare, serverSharePrivate: serverSharePrivate);
-
-            
-            
+Future<String> exportPrivateKey({
+  required String localShare,
+  required String serverSharePrivate,
+}) => RustLib.instance.api.crateApiMpcEngineExportPrivateKey(
+  localShare: localShare,
+  serverSharePrivate: serverSharePrivate,
+);
