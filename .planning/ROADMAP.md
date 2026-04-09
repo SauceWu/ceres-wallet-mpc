@@ -143,7 +143,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — MessageDigest newtype 定义 + sign_start 签名更新 + 单元测试 (SEC-03)
+- [x] 08-01-PLAN.md — MessageDigest newtype 定义 + sign_start 签名更新 + 单元测试 (SEC-03)
 - [ ] 08-02-PLAN.md — WireEnvelope/ProtocolType 类型 + WIRE-FORMAT.md 冻结规范文档 (INFRA-04)
 
 ### Phase 9: DKG Keygen 4 轮协议
@@ -208,7 +208,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
-| 8. Wire Format 与安全类型定义 | 0/2 | Planning complete | - |
+| 8. Wire Format 与安全类型定义 | 1/2 | In Progress|  |
 | 9. DKG Keygen 4 轮协议 | 0/? | Not started | - |
 | 10. DSG Signing 4 轮协议 | 0/? | Not started | - |
 | 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
