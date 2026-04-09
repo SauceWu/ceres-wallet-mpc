@@ -2,7 +2,8 @@
 ///
 /// Mimics real server behavior including:
 /// - Session lifecycle (create → use → expire)
-/// - Correct JSON field names matching DKLs23 protocol output
+/// - WireEnvelope format matching sl-dkls23 ChannelRelay protocol
+/// - Multi-round protocol (4 rounds for keygen/sign/recovery)
 /// - Request validation (missing params, unknown session)
 /// - Error responses using standard JSON-RPC error codes
 ///
@@ -16,7 +17,16 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:ceres_mpc/ceres_mpc.dart';
 
-/// Simulates a complete MPC server (server side) with session state management.
+/// Simulates a complete MPC server (Party1) with session state management.
+///
+/// The server uses WireEnvelope format for all protocol messages:
+/// {session_id, protocol, round, from_id, to_id, payload_encoding, payload, step?}
+///
+/// Protocol rounds (DKLs23 4-round):
+/// - keygen_start: returns round 1 WireEnvelope
+/// - keygen_continue (round 2): returns round 2 WireEnvelope
+/// - keygen_continue (round 3): returns round 3 WireEnvelope
+/// - keygen_continue (round 4): returns completed result (no more WireEnvelope)
 class MockMpcTransport implements MpcTransport {
   /// Active sessions keyed by sessionId.
   final Map<String, _MockSession> _sessions = {};
@@ -64,41 +74,28 @@ class MockMpcTransport implements MpcTransport {
     }
   }
 
-  // ── Keygen ──────────────────────────────────────────────────────
+  // ── Keygen (4-round DKLs23 DKG) ────────────────────────────────
 
   Map<String, dynamic> _keygenStart(Map<String, dynamic> params) {
     final sessionId = _generateSessionId('kg');
 
-    // Simulate Server DKG round 1:
-    // Keyshare (server)::key_gen_first_message() produces commitment + zk proof
-    // ChainCode1::chain_code_first_message() produces CC commitment
-    final session = _MockSession(
+    // Server DKG round 1: generate initial protocol message via Relay
+    _sessions[sessionId] = _MockSession(
       type: _SessionType.keygen,
       round: 1,
-      // In real server, these would be actual cryptographic state
-      state: {
-        'kg_comm_witness_public_share': _mockHex(64),
-        'cc_comm_witness_public_share': _mockHex(64),
-        'kg_ec_key_pair_party1': _mockHex(32),
-        'party_one_private': _mockHex(32),
-      },
+      maxRounds: 4,
+      state: {},
     );
-    _sessions[sessionId] = session;
 
     return {
       'sessionId': sessionId,
-      'serverPayload': {
-        // KeyGenFirstMsg: Pedersen commitment to public key + ZK PoK of DLog
-        'kg_party_one_first_message': {
-          'pk_commitment': _mockHex(64),
-          'zk_pok_commitment': _mockHex(64),
-        },
-        // ChainCode Party1FirstMessage: commitment for HD derivation chain code
-        'cc_party_one_first_message': {
-          'pk_commitment': _mockHex(64),
-          'zk_pok_commitment': _mockHex(64),
-        },
-      },
+      'serverPayload': _wireEnvelope(
+        sessionId: sessionId,
+        protocol: 'dkg',
+        round: 1,
+        fromId: 1,
+        toId: 0,
+      ),
     };
   }
 
@@ -108,64 +105,58 @@ class MockMpcTransport implements MpcTransport {
       throw _RpcError(-32600, 'Missing sessionId in params');
     }
 
-    final session = _sessions.remove(sessionId);
+    final session = _sessions[sessionId];
     if (session == null || session.type != _SessionType.keygen) {
       throw _RpcError(-32001, 'Session not found or expired: $sessionId');
     }
 
-    // Simulate Server DKG round 2:
-    // Verify client's DLog proof, reveal commitment witness,
-    // assemble Keyshare (server) and persist it.
+    session.round += 1;
 
-    // Generate a deterministic mock key pair for this session
+    // Round 2 and 3: return next WireEnvelope
+    if (session.round < session.maxRounds) {
+      return {
+        'sessionId': sessionId,
+        'serverPayload': _wireEnvelope(
+          sessionId: sessionId,
+          protocol: 'dkg',
+          round: session.round,
+          fromId: 1,
+          toId: 0,
+        ),
+      };
+    }
+
+    // Round 4 (final): protocol complete, return KeygenResult
+    _sessions.remove(sessionId);
+
     final mockMpcKeyId = 'mpc_${_mockHex(8)}';
     final mockPublicKeyHex = '04${_mockHex(128)}'; // uncompressed secp256k1
     final mockAddress = '0x${_mockHex(40)}';
 
-    // Store the key in mock DB
     _keyStore[mockMpcKeyId] = _MockKeyRecord(
       mpcKeyId: mockMpcKeyId,
       address: mockAddress,
       publicKey: mockPublicKeyHex,
-      keyshareSerialized: _mockHex(256), // serialized Keyshare (server)
+      keyshareSerialized: _mockHex(256),
       rotationVersion: 1,
       exported: false,
     );
 
     return {
-      'sessionId': sessionId,
-      'serverPayload': {
-        // KeyGenParty1Message2: revealed commitment + Paillier public key
-        'kg_party_one_second_message': {
-          'ecdh_second_message': {
-            'comm_witness': {
-              'public_share': session.state['kg_comm_witness_public_share'],
-              'pk_commitment_blind_factor': _mockHex(64),
-              'zk_pok_blind_factor': _mockHex(64),
-            },
-          },
-          'ek': _mockHex(512), // Paillier encryption key
-          'c_key': _mockHex(512), // encrypted server secret
-          'correct_key_proof': {
-            'sigma_vec': List.generate(10, (_) => _mockHex(64)),
-          },
-          'range_proof': {
-            'composite_dlog_proof': _mockHex(128),
-          },
-        },
-        // ChainCode Party1SecondMessage: revealed CC commitment
-        'cc_party_one_second_message': {
-          'comm_witness': {
-            'public_share': session.state['cc_comm_witness_public_share'],
-            'pk_commitment_blind_factor': _mockHex(64),
-            'zk_pok_blind_factor': _mockHex(64),
-          },
-        },
-      },
+      'status': 'completed',
+      'mpcKeyId': mockMpcKeyId,
+      'address': mockAddress,
+      'publicKey': mockPublicKeyHex,
+      'curve': 'secp256k1',
+      'threshold': 2,
+      'keyRef': mockMpcKeyId,
+      'backupState': 'pending',
+      'rotationVersion': 1,
+      'localEncryptedShare': base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
     };
   }
 
-  // ── Recovery ────────────────────────────────────────────────────
+  // ── Recovery (4-round DKLs23 key_refresh) ──────────────────────
 
   Map<String, dynamic> _recoveryStart(Map<String, dynamic> params) {
     final mpcKeyId = params['mpcKeyId'] as String?;
@@ -183,27 +174,22 @@ class MockMpcTransport implements MpcTransport {
 
     final sessionId = _generateSessionId('rc');
 
-    // Simulate Rotation1::key_rotate_first_message()
-    // Generates coin-flip commitment for random rotation factor
     _sessions[sessionId] = _MockSession(
       type: _SessionType.recovery,
       round: 1,
-      state: {
-        'mpcKeyId': mpcKeyId,
-        'coin_flip_m1': _mockHex(64), // server's coin-flip secret
-        'coin_flip_r1': _mockHex(64), // server's coin-flip randomness
-      },
+      maxRounds: 4,
+      state: {'mpcKeyId': mpcKeyId},
     );
 
     return {
       'sessionId': sessionId,
-      'serverPayload': {
-        // CoinFlip Party1FirstMessage: commitment to random rotation factor
-        'coin_flip_party1_first_message': {
-          'pk_commitment': _mockHex(64),
-          'zk_pok_commitment': _mockHex(64),
-        },
-      },
+      'serverPayload': _wireEnvelope(
+        sessionId: sessionId,
+        protocol: 'rotation',
+        round: 1,
+        fromId: 1,
+        toId: 0,
+      ),
     };
   }
 
@@ -213,49 +199,51 @@ class MockMpcTransport implements MpcTransport {
       throw _RpcError(-32600, 'Missing sessionId in params');
     }
 
-    final session = _sessions.remove(sessionId);
+    final session = _sessions[sessionId];
     if (session == null || session.type != _SessionType.recovery) {
       throw _RpcError(-32001, 'Session not found or expired: $sessionId');
     }
 
+    session.round += 1;
+
+    if (session.round < session.maxRounds) {
+      return {
+        'sessionId': sessionId,
+        'serverPayload': _wireEnvelope(
+          sessionId: sessionId,
+          protocol: 'rotation',
+          round: session.round,
+          fromId: 1,
+          toId: 0,
+        ),
+      };
+    }
+
+    // Final round: complete recovery
+    _sessions.remove(sessionId);
+
     final mpcKeyId = session.state['mpcKeyId'] as String;
     final keyRecord = _keyStore[mpcKeyId]!;
-
-    // Simulate:
-    // 1. Rotation1::key_rotate_second_message() — complete coin-flip
-    // 2. master_key1.rotation_first_message() — apply rotation to Keyshare (server)
-    // 3. Persist new Keyshare (server)
 
     keyRecord.keyshareSerialized = _mockHex(256); // new rotated key
     keyRecord.rotationVersion += 1;
 
     return {
-      'sessionId': sessionId,
-      'serverPayload': {
-        // CoinFlip Party1SecondMessage: reveal commitment
-        'coin_flip_party1_second_message': {
-          'comm_witness': {
-            'public_share': _mockHex(64),
-            'pk_commitment_blind_factor': _mockHex(64),
-            'zk_pok_blind_factor': _mockHex(64),
-          },
-        },
-        // RotationParty1Message1: rotation proof for client
-        'rotation_party1_first_message': {
-          'ek': _mockHex(512), // new Paillier encryption key
-          'c_key_new': _mockHex(512), // new encrypted server secret
-          'correct_key_proof': {
-            'sigma_vec': List.generate(10, (_) => _mockHex(64)),
-          },
-          'range_proof': {
-            'composite_dlog_proof': _mockHex(128),
-          },
-        },
-      },
+      'status': 'completed',
+      'mpcKeyId': mpcKeyId,
+      'address': keyRecord.address,
+      'publicKey': keyRecord.publicKey,
+      'curve': 'secp256k1',
+      'threshold': 2,
+      'keyRef': mpcKeyId,
+      'backupState': 'pending',
+      'rotationVersion': keyRecord.rotationVersion,
+      'localEncryptedShare': base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
+      'encryptedBackupShare': null,
     };
   }
 
-  // ── Sign ────────────────────────────────────────────────────────
+  // ── Sign (4-round DKLs23 DSG) ─────────────────────────────────
 
   Map<String, dynamic> _signStart(Map<String, dynamic> params) {
     final mpcKeyId = params['mpcKeyId'] as String?;
@@ -278,28 +266,25 @@ class MockMpcTransport implements MpcTransport {
 
     final sessionId = _generateSessionId('sg');
 
-    // Simulate server ephemeral key generation for signing:
-    // Keyshare (server)::sign_first_message() generates ephemeral EC key pair
     _sessions[sessionId] = _MockSession(
       type: _SessionType.sign,
       round: 1,
+      maxRounds: 4,
       state: {
         'mpcKeyId': mpcKeyId,
         'messageHash': messageHash,
-        'eph_ec_key_pair_party1': _mockHex(32),
       },
     );
 
     return {
       'sessionId': sessionId,
-      'serverPayload': {
-        // EphKeyGenFirstMsg: server's ephemeral public key commitment
-        'eph_key_gen_first_message_party_one': {
-          'pk_commitment': _mockHex(64),
-          'zk_pok_commitment': _mockHex(64),
-        },
-        'message_hash': messageHash,
-      },
+      'serverPayload': _wireEnvelope(
+        sessionId: sessionId,
+        protocol: 'dsg',
+        round: 1,
+        fromId: 1,
+        toId: 0,
+      ),
     };
   }
 
@@ -309,15 +294,28 @@ class MockMpcTransport implements MpcTransport {
       throw _RpcError(-32600, 'Missing sessionId in params');
     }
 
-    final session = _sessions.remove(sessionId);
+    final session = _sessions[sessionId];
     if (session == null || session.type != _SessionType.sign) {
       throw _RpcError(-32001, 'Session not found or expired: $sessionId');
     }
 
-    // Simulate:
-    // Parse client's SignMessage (partial signature from client)
-    // master_key1.sign_second_message() — complete the DKLs23 signature
-    // Return (r, s, recid)
+    session.round += 1;
+
+    if (session.round < session.maxRounds) {
+      return {
+        'sessionId': sessionId,
+        'serverPayload': _wireEnvelope(
+          sessionId: sessionId,
+          protocol: 'dsg',
+          round: session.round,
+          fromId: 1,
+          toId: 0,
+        ),
+      };
+    }
+
+    // Final round: return signature
+    _sessions.remove(sessionId);
 
     return {
       'status': 'completed',
@@ -343,32 +341,45 @@ class MockMpcTransport implements MpcTransport {
       throw _RpcError(-32004, 'Key already exported: $mpcKeyId');
     }
 
-    // Mark as exported — all future MPC operations will be rejected
     keyRecord.exported = true;
 
-    // Return server's private share for key reconstruction
-    // In real server: serde_json::to_value(&keyshare_server.private)
+    // Return server's keyshare as Base64 bytes for client-side reconstruction
     return {
-      'serverSharePrivate': {
-        // Party1Private.x1: the secret scalar (FE)
-        'x1': _mockHex(64),
-        // Paillier private key components
-        'paillier_priv': {
-          'p': _mockHex(256),
-          'q': _mockHex(256),
-        },
-        // Randomness used in Paillier encryption of x1
-        'c_key_randomness': _mockHex(512),
-      },
+      'serverKeyshare': base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
     };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────
 
+  /// Build a WireEnvelope JSON map matching the Rust WireEnvelope struct.
+  ///
+  /// Fields: session_id, protocol, round, from_id, to_id,
+  ///         payload_encoding ("cbor_base64"), payload (Base64 mock bytes)
+  Map<String, dynamic> _wireEnvelope({
+    required String sessionId,
+    required String protocol,
+    required int round,
+    required int fromId,
+    required int toId,
+  }) {
+    // Generate mock protocol bytes (simulates CBOR-encoded DKLs23 message)
+    final mockPayloadBytes = List.generate(64 + _rand.nextInt(64), (_) => _rand.nextInt(256));
+    final payloadBase64 = base64Encode(mockPayloadBytes);
+
+    return {
+      'session_id': sessionId,
+      'protocol': protocol,
+      'round': round,
+      'from_id': fromId,
+      'to_id': toId,
+      'payload_encoding': 'cbor_base64',
+      'payload': payloadBase64,
+    };
+  }
+
   String _generateSessionId(String prefix) {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final random = _mockHex(8);
-    return '${prefix}_${timestamp}_$random';
+    // Generate a 64-char hex string (32 bytes) as required by Rust InstanceId
+    return _mockHex(64);
   }
 
   /// Generate deterministic mock hex string of given length.
@@ -402,11 +413,13 @@ enum _SessionType { keygen, recovery, sign }
 class _MockSession {
   final _SessionType type;
   int round;
+  final int maxRounds;
   final Map<String, dynamic> state;
 
   _MockSession({
     required this.type,
     required this.round,
+    required this.maxRounds,
     required this.state,
   });
 }
