@@ -2,7 +2,7 @@ use dkls23_ll::dkg::State as DkgState;
 use dkls23_ll::dsg::{PartialSignature, State as DsgState};
 use k256::AffinePoint;
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -70,6 +70,11 @@ pub static RECOVERY_SESSIONS: Lazy<Mutex<HashMap<String, RecoverySession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 pub static SIGN_SESSIONS: Lazy<Mutex<HashMap<String, SignSession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Exported key registry — stores compressed public key hex of keyshares that have been exported.
+/// Checked at sign_start to reject signing with an exported keyshare (T-12-04).
+pub static EXPORTED_KEYS: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
 
 pub fn remove_keygen_session(session_id: &str) -> Option<KeygenSession> {
     KEYGEN_SESSIONS.lock().unwrap().remove(session_id)

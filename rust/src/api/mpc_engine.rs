@@ -1,6 +1,6 @@
 use crate::api::types::{
-    BackupEnvelope, DecryptBackupResult, KeygenCompletedPayload, MessageDigest, MpcRoundResult,
-    ProtocolType, RecoveryCompletedPayload, SignCompletedPayload, WireEnvelope,
+    BackupEnvelope, DecryptBackupResult, ExportResult, KeygenCompletedPayload, MessageDigest,
+    MpcRoundResult, ProtocolType, RecoveryCompletedPayload, SignCompletedPayload, WireEnvelope,
 };
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -14,12 +14,13 @@ use dkls23_ll::dsg::{self, combine_signatures, create_partial_signature};
 use hkdf::Hkdf;
 use k256::ecdsa::{RecoveryId, VerifyingKey};
 use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::{AffinePoint, NonZeroScalar, ProjectivePoint, Scalar};
 use sha2::Sha256;
 use std::str::FromStr;
 
 use crate::session::{
-    KeygenSession, RecoverySession, SignSession, KEYGEN_SESSIONS, RECOVERY_SESSIONS, SESSION_TTL,
-    SIGN_SESSIONS,
+    KeygenSession, RecoverySession, SignSession, EXPORTED_KEYS, KEYGEN_SESSIONS,
+    RECOVERY_SESSIONS, SESSION_TTL, SIGN_SESSIONS,
 };
 use std::time::Instant;
 
@@ -708,6 +709,12 @@ pub fn sign_start(
     // 4. 提取公钥（在 keyshare 被 State::new 消耗之前）
     let public_key = keyshare.public_key;
 
+    // 4a. T-12-04: 拒绝已导出 keyshare 的签名请求
+    let pk_hex = hex::encode(public_key.to_encoded_point(true).as_bytes());
+    if EXPORTED_KEYS.lock().unwrap().contains(&pk_hex) {
+        return Err("signing rejected: keyshare has been exported".to_string());
+    }
+
     // 5. 初始化 DSG State（"m" = master path，无 BIP-32 派生）
     let mut rng = rand::thread_rng();
     let chain_path = DerivationPath::from_str("m")
@@ -1041,9 +1048,95 @@ pub fn decrypt_backup_share(
 
 // ── Key Export ────────────────────────────────────────────────────────
 
+/// 中间结构体：从 Keyshare JSON 中提取私钥重建所需字段。
+/// Keyshare.s_i 是 pub(crate)，无法直接访问，但通过 serde 可反序列化。
+#[derive(serde::Deserialize)]
+struct KeyshareExportFields {
+    s_i: Scalar,
+    x_i_list: Vec<NonZeroScalar>,
+    rank_list: Vec<u8>,
+    party_id: u8,
+    public_key: AffinePoint,
+}
+
+/// Lagrange 系数（2-of-2）：lambda_i = x_j / (x_j - x_i)
+fn lagrange_coeff_2of2(x_i: &Scalar, x_j: &Scalar) -> Result<Scalar, String> {
+    let diff = x_j - x_i;
+    let diff_inv = Option::<Scalar>::from(diff.invert())
+        .ok_or_else(|| "degenerate Lagrange: x_i == x_j".to_string())?;
+    Ok(*x_j * diff_inv)
+}
+
 pub fn export_private_key(
     local_share: String,
     server_share_private: String,
 ) -> Result<String, String> {
-    Err("not implemented: export uses dkls23-ll Keyshare, see Phase 12".to_string())
+    // 1. 反序列化两个 Keyshare JSON 到中间结构体
+    let fields_0: KeyshareExportFields = serde_json::from_str(&local_share)
+        .map_err(|e| format!("failed to parse local keyshare: {e}"))?;
+    let fields_1: KeyshareExportFields = serde_json::from_str(&server_share_private)
+        .map_err(|e| format!("failed to parse server keyshare: {e}"))?;
+
+    // 2. 验证 rank_list 全为 0（2-of-2 标准 Lagrange）
+    if fields_0.rank_list.iter().any(|&r| r != 0) || fields_1.rank_list.iter().any(|&r| r != 0) {
+        return Err("export only supports rank=0 (standard 2-of-2 Lagrange)".to_string());
+    }
+
+    // 3. 验证两个 share 来自同一 DKG 运行（public_key 必须一致）
+    if fields_0.public_key != fields_1.public_key {
+        return Err(
+            "private key reconstruction failed: public key mismatch — shares from different DKG runs".to_string()
+        );
+    }
+
+    // 4. 提取 x_i：x_i_list[party_id] 对应该 party 的 x 坐标
+    // NonZeroScalar derefs to Scalar，用 * 解引用
+    let x_0 = *fields_0
+        .x_i_list
+        .get(fields_0.party_id as usize)
+        .ok_or("x_i_list index out of range for party 0")?;
+    let x_1 = *fields_1
+        .x_i_list
+        .get(fields_1.party_id as usize)
+        .ok_or("x_i_list index out of range for party 1")?;
+
+    // 5. 计算 Lagrange 系数
+    let lambda_0 = lagrange_coeff_2of2(&x_0, &x_1)?;
+    let lambda_1 = lagrange_coeff_2of2(&x_1, &x_0)?;
+
+    // 6. 重建私钥：private_key = lambda_0 * s_0 + lambda_1 * s_1
+    let private_key = lambda_0 * fields_0.s_i + lambda_1 * fields_1.s_i;
+
+    // 7. 验证：G * private_key == public_key
+    let derived_pub = (ProjectivePoint::GENERATOR * private_key).to_affine();
+    if derived_pub != fields_0.public_key {
+        return Err(
+            "private key reconstruction failed: public key mismatch after Lagrange interpolation"
+                .to_string(),
+        );
+    }
+
+    // 8. 派生 EVM 地址（非压缩公钥 65 字节）
+    let point = derived_pub.to_encoded_point(false);
+    let address = crate::api::address::derive_evm_address(point.as_bytes())?;
+
+    // 9. 将私钥转换为 hex（ScalarPrimitive → FieldBytes → hex）
+    let scalar_primitive =
+        k256::elliptic_curve::ScalarPrimitive::<k256::Secp256k1>::from(&private_key);
+    let private_key_hex = hex::encode(scalar_primitive.to_bytes());
+
+    // 10. 注册导出的公钥，阻止后续使用此 keyshare 签名（T-12-04）
+    let pk_compressed_hex = hex::encode(fields_0.public_key.to_encoded_point(true).as_bytes());
+    EXPORTED_KEYS
+        .lock()
+        .unwrap()
+        .insert(pk_compressed_hex);
+
+    // 11. 返回 ExportResult JSON
+    let result = ExportResult {
+        private_key: private_key_hex,
+        address,
+        exported: true,
+    };
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
