@@ -185,7 +185,11 @@ Plans:
   2. recovery 路径（backup share + server share → 新 Keyshare）通过 Rust 测试验证
   3. rotationVersion 在每次 rotation/recovery 后递增，不硬编码
   4. 超过 TTL 的 session 被驱逐后，后续轮次消息返回明确错误而非挂起
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 11-01-PLAN.md — RecoverySession 实体 + TTL 常量 + recover_start/recover_continue 4 轮状态机 (PROTO-03, SEC-02)
+- [ ] 11-02-PLAN.md — Rotation 双方模拟集成测试 + 签名验证 + rotationVersion 递增 + TTL 驱逐测试 (PROTO-03, SEC-02)
 
 ### Phase 12: Backup Envelope 与 Key Export
 **Goal**: Backup envelope 完全适配 Keyshare 新序列化格式，Key export 私钥重建路径可验证
@@ -218,7 +222,7 @@ Plans:
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
-| 10. DSG Signing 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
-| 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
+| 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
+| 11. Key Rotation/Recovery 4 轮协议 | 0/2 | Planning complete | - |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
