@@ -1,4 +1,4 @@
-use crate::api::types::{BackupEnvelope, DecryptBackupResult};
+use crate::api::types::{BackupEnvelope, DecryptBackupResult, MessageDigest};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce,
@@ -36,9 +36,22 @@ pub fn recover_continue(session_id: String, server_payload: String) -> Result<St
 pub fn sign_start(
     session_id: String,
     share: String,
+    message_hash_hex: String,
     server_payload: String,
 ) -> Result<String, String> {
+    // Rust 边界立即转换为 MessageDigest，确保 Vec<u8> 不能直接传入
+    let _digest = MessageDigest::from_hex(&message_hash_hex)?;
     Err("not implemented: signing uses dkls23-ll, see Phase 10".to_string())
+}
+
+/// 内部签名逻辑入口 — 类型系统强制只接受 MessageDigest。
+/// Phase 10 实现具体 DSG 协议逻辑。
+#[allow(dead_code)]
+fn sign_with_digest(
+    _session_id: &str,
+    _digest: MessageDigest,
+) -> Result<String, String> {
+    Err("not implemented: see Phase 10".to_string())
 }
 
 pub fn sign_continue(session_id: String, server_payload: String) -> Result<String, String> {

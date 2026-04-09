@@ -466,6 +466,7 @@ fn wire__crate__api__mpc_engine__sign_start_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_session_id = <String>::sse_decode(&mut deserializer);
             let api_share = <String>::sse_decode(&mut deserializer);
+            let api_message_hash_hex = <String>::sse_decode(&mut deserializer);
             let api_server_payload = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -473,6 +474,7 @@ fn wire__crate__api__mpc_engine__sign_start_impl(
                     let output_ok = crate::api::mpc_engine::sign_start(
                         api_session_id,
                         api_share,
+                        api_message_hash_hex,
                         api_server_payload,
                     )?;
                     Ok(output_ok)
