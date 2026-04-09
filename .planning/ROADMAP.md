@@ -248,4 +248,4 @@ Plans:
 | 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
 | 12. Backup Envelope 与 Key Export | 2/2 | Complete    | 2026-04-09 |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 2/2 | Complete    | 2026-04-09 |
-| 13.1. sl-dkls23 迁移 | 4/4 | Complete   | 2026-04-09 |
+| 13.1. sl-dkls23 迁移 | 4/4 | Complete    | 2026-04-09 |

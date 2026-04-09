@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Phase complete — ready for verification
+status: Milestone complete
 stopped_at: Completed 13.1-04-PLAN.md
-last_updated: "2026-04-09T08:40:40.535Z"
+last_updated: "2026-04-09T08:47:53.009Z"
 progress:
   total_phases: 14
   completed_phases: 8
@@ -15,8 +15,8 @@ progress:
 
 ## Current Position
 
-Phase: 13.1 (sl-dkls23 迁移) — EXECUTING
-Plan: 4 of 4
+Phase: 13.1
+Plan: Not started
 Completed Plan: 08-02 (WireEnvelope JSON 信封格式与冻结规范)
 Next: Phase 9
 
