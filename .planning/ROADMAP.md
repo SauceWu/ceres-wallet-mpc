@@ -229,11 +229,11 @@ Plans:
 **Goal:** 将 dkls23-ll 低层同步 API 完全替换为 sl-dkls23 高层 async API，通过 ChannelRelay 桥接 FFI start/continue 模式，适配 Keyshare bytes 序列化格式，使用内置 combine_shares 和 key_refresh 替换手动实现
 **Requirements**: INFRA-01, INFRA-02, INFRA-05, PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01, SEC-02, SEC-03, REG-01, REG-02
 **Depends on:** Phase 13
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 - [x] 13.1-01-PLAN.md — Cargo.toml 依赖替换 + runtime.rs OnceCell Runtime + relay.rs ChannelRelay + session.rs 重写 (INFRA-01, PROTO-01, PROTO-02, PROTO-03)
-- [ ] 13.1-02-PLAN.md — mpc_engine.rs 全面重写：keygen/sign/recover/backup/export 适配 sl-dkls23 async API (PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01, SEC-02, SEC-03)
+- [x] 13.1-02-PLAN.md — mpc_engine.rs 全面重写：keygen/sign/recover/backup/export 适配 sl-dkls23 async API (PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01, SEC-02, SEC-03)
 - [ ] 13.1-03-PLAN.md — 集成测试全面重写：test_dkg/test_dsg/test_rotation/test_backup_export 适配 sl-dkls23 (REG-01, PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01)
 - [ ] 13.1-04-PLAN.md — FRB codegen 重新生成 + iOS/Android 交叉编译验证 + flutter analyze + 人工验证 (INFRA-02, INFRA-05, REG-02)
 
@@ -248,4 +248,4 @@ Plans:
 | 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
 | 12. Backup Envelope 与 Key Export | 2/2 | Complete    | 2026-04-09 |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 2/2 | Complete    | 2026-04-09 |
-| 13.1. sl-dkls23 迁移 | 1/4 | In Progress|  |
+| 13.1. sl-dkls23 迁移 | 2/4 | In Progress|  |

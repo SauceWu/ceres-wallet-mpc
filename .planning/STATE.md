@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
 status: Ready to execute
-stopped_at: Completed 13.1-01-PLAN.md
-last_updated: "2026-04-09T08:15:20.280Z"
+stopped_at: Completed 13.1-02-PLAN.md
+last_updated: "2026-04-09T08:24:41.913Z"
 progress:
   total_phases: 14
   completed_phases: 7
   total_plans: 18
-  completed_plans: 15
-  percent: 83
+  completed_plans: 16
+  percent: 89
 ---
 
 ## Current Position
 
 Phase: 13.1 (sl-dkls23 迁移) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Completed Plan: 08-02 (WireEnvelope JSON 信封格式与冻结规范)
 Next: Phase 9
 
@@ -51,6 +51,9 @@ Next: Phase 9
 - [Phase 13.1]: sl-oblivious pinned to =1.0.0-beta — sl-dkls23 1.0.0-beta incompatible with sl-oblivious 1.1.0 (DLogProof gained generic param)
 - [Phase 13.1]: sl-dkls23 retains multi-thread default feature — test-support needs tokio/rt-multi-thread via multi-thread
 - [Phase 13.1]: ChannelRelayConn Sink::Error = MessageSendError — sl-mpc-mate 1.0.0-beta Relay trait requires exactly this Error type
+- [Phase 13.1]: SignSetup::new takes Arc<Keyshare>, not ranks/t — those are encoded inside Keyshare
+- [Phase 13.1]: NoVerifyingKey::new(id) requires party ID argument for 2-of-2 setup
+- [Phase 13.1]: sl_dkls23::sign::run (not sign::dsg::run) — dsg is private, sign re-exports via pub use dsg::*
 
 ## Roadmap Evolution
 
@@ -72,8 +75,9 @@ Next: Phase 9
 | Phase 12 P02 | 206s | 2 tasks | 3 files |
 | Phase 13 P01 | 137s | 2 tasks | 12 files |
 | Phase 13.1 P01 | 271s | 2 tasks | 6 files |
+| Phase 13.1 P02 | 304s | 2 tasks | 2 files |
 
 ## Last Session
 
-Stopped at: Completed 13.1-01-PLAN.md
+Stopped at: Completed 13.1-02-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z
