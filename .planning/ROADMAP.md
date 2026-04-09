@@ -200,7 +200,11 @@ Plans:
   2. 错误的备份密钥或截断的 envelope 返回 Err，不 panic
   3. `export_private_key(keyshare_1, keyshare_2)` 重建私钥后，私钥对应的 EVM 地址与 DKG 产出地址一致
   4. 导出私钥后，原 Keyshare 被标记为 exported 状态（不允许继续用于签名）
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 12-01-PLAN.md — Backup envelope roundtrip 集成测试 + 错误路径测试 (AUX-01)
+- [ ] 12-02-PLAN.md — export_private_key Lagrange 插值实现 + EXPORTED_KEYS 签名守卫 + 导出集成测试 (AUX-02)
 
 ### Phase 13: FRB Codegen + Dart 层适配 + CI 门控
 **Goal**: Flutter 层 MpcEngine/MpcClient API 适配 4 轮协议模型，CI 自动构建并发布 iOS XCFramework 和 Android .so 产物
@@ -223,6 +227,6 @@ Plans:
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
-| 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
-| 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
+| 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
+| 12. Backup Envelope 与 Key Export | 0/2 | Planning complete | - |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
