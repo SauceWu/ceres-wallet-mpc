@@ -1,6 +1,6 @@
 use crate::api::types::{
     BackupEnvelope, DecryptBackupResult, KeygenCompletedPayload, MessageDigest, MpcRoundResult,
-    ProtocolType, WireEnvelope,
+    ProtocolType, SignCompletedPayload, WireEnvelope,
 };
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -8,12 +8,16 @@ use aes_gcm::{
 };
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
+use derivation_path::DerivationPath;
 use dkls23_ll::dkg::{Party, State as DkgState};
+use dkls23_ll::dsg::{self, combine_signatures, create_partial_signature};
 use hkdf::Hkdf;
+use k256::ecdsa::{RecoveryId, VerifyingKey};
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use sha2::Sha256;
+use std::str::FromStr;
 
-use crate::session::{KeygenSession, KEYGEN_SESSIONS};
+use crate::session::{KeygenSession, SignSession, KEYGEN_SESSIONS, SIGN_SESSIONS};
 
 // ── CBOR 编解码助手 ───────────────────────────────────────────────────
 
@@ -368,29 +372,289 @@ pub fn recover_continue(session_id: String, server_payload: String) -> Result<St
 
 // ── Signing ──────────────────────────────────────────────────────────
 
+/// DSG 协议启动入口。
+/// share: JSON-serialized Keyshare（来自本地安全存储）
+/// message_hash_hex: 32 字节消息摘要的 hex 编码（SEC-03 边界验证）
+/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含 SignMsg1）
+/// 返回: MpcRoundResult JSON (status="in_progress", round=2, client_payload=WireEnvelope JSON)
 pub fn sign_start(
     session_id: String,
     share: String,
     message_hash_hex: String,
     server_payload: String,
 ) -> Result<String, String> {
-    // Rust 边界立即转换为 MessageDigest，确保 Vec<u8> 不能直接传入
-    let _digest = MessageDigest::from_hex(&message_hash_hex)?;
-    Err("not implemented: signing uses dkls23-ll, see Phase 10".to_string())
+    // 1. 类型安全边界：hex → MessageDigest（SEC-03，拒绝非 32 字节或非法 hex）
+    let digest = MessageDigest::from_hex(&message_hash_hex)?;
+
+    // 2. 解析服务端 Round 1 信封，验证 from_id == 1（T-10-01）
+    let server_env: WireEnvelope = serde_json::from_str(&server_payload)
+        .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
+    if server_env.from_id != 1 {
+        return Err(format!(
+            "expected from_id=1 (server), got from_id={}",
+            server_env.from_id
+        ));
+    }
+
+    // 3. 反序列化 Keyshare
+    let keyshare: dkls23_ll::dkg::Keyshare = serde_json::from_str(&share)
+        .map_err(|e| format!("invalid keyshare JSON: {e}"))?;
+
+    // 4. 提取公钥（在 keyshare 被 State::new 消耗之前）
+    let public_key = keyshare.public_key;
+
+    // 5. 初始化 DSG State（"m" = master path，无 BIP-32 派生）
+    let mut rng = rand::thread_rng();
+    let chain_path = DerivationPath::from_str("m")
+        .map_err(|e| format!("invalid derivation path: {e}"))?;
+    let mut state = dsg::State::new(&mut rng, keyshare, &chain_path)
+        .map_err(|e| e.to_string())?;
+
+    // 6. generate_msg1（驱动本方状态机，Round 1 不需要发送给服务端）
+    let _my_msg1 = state.generate_msg1();
+
+    // 7. 解码服务端 SignMsg1，handle_msg1 → Vec<SignMsg2>
+    let server_msg1: dsg::SignMsg1 = decode_cbor_base64(&server_env.payload)?;
+    let msg2_vec = state
+        .handle_msg1(&mut rng, vec![server_msg1])
+        .map_err(|e| e.to_string())?;
+
+    if msg2_vec.is_empty() {
+        return Err("handle_msg1 returned empty Vec<SignMsg2>".to_string());
+    }
+
+    // 8. 序列化 msg2[0]，包装为 WireEnvelope(round=2, P2P to=1)
+    let msg2_payload = encode_cbor_base64(&msg2_vec[0])?;
+    let env = WireEnvelope::new(
+        session_id.clone(),
+        ProtocolType::Dsg,
+        2,
+        0,
+        Some(1),
+        msg2_payload,
+        None,
+    );
+    let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+    // 9. 存储 SignSession（round=2，等待服务端 SignMsg2）
+    {
+        let mut sessions = SIGN_SESSIONS.lock().unwrap();
+        sessions.insert(
+            session_id.clone(),
+            SignSession {
+                state,
+                round: 2,
+                digest,
+                consumed: false,
+                partial_sig: None,
+                pending_msg4: None,
+                public_key,
+            },
+        );
+    }
+
+    // 10. 返回 MpcRoundResult
+    let result = MpcRoundResult {
+        status: "in_progress".to_string(),
+        round: 2,
+        client_payload: Some(env_json),
+        error_message: None,
+    };
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
-/// 内部签名逻辑入口 — 类型系统强制只接受 MessageDigest。
-/// Phase 10 实现具体 DSG 协议逻辑。
-#[allow(dead_code)]
-fn sign_with_digest(
-    _session_id: &str,
-    _digest: MessageDigest,
-) -> Result<String, String> {
-    Err("not implemented: see Phase 10".to_string())
-}
-
+/// DSG 协议轮次推进入口。
+/// server_payload: 服务端当前轮次 WireEnvelope JSON
+/// 返回: MpcRoundResult JSON（in_progress 或 completed）
 pub fn sign_continue(session_id: String, server_payload: String) -> Result<String, String> {
-    Err("not implemented: signing uses dkls23-ll, see Phase 10".to_string())
+    // 解析服务端信封，验证 from_id == 1（T-10-01）
+    let server_env: WireEnvelope = serde_json::from_str(&server_payload)
+        .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
+    if server_env.from_id != 1 {
+        return Err(format!(
+            "expected from_id=1 (server), got from_id={}",
+            server_env.from_id
+        ));
+    }
+
+    let mut rng = rand::thread_rng();
+
+    // 获取当前 session round
+    let current_round = {
+        let sessions = SIGN_SESSIONS.lock().unwrap();
+        sessions
+            .get(&session_id)
+            .map(|s| s.round)
+            .ok_or_else(|| format!("sign session not found: {session_id}"))?
+    };
+
+    match current_round {
+        // ── Round 2：服务端发来 SignMsg2 ──────────────────────────────────
+        2 => {
+            let server_msg2: dsg::SignMsg2 = decode_cbor_base64(&server_env.payload)?;
+
+            let msg3_payload = {
+                let mut sessions = SIGN_SESSIONS.lock().unwrap();
+                let session = sessions
+                    .get_mut(&session_id)
+                    .ok_or_else(|| format!("sign session not found: {session_id}"))?;
+
+                // handle_msg2 → Vec<SignMsg3>
+                let msg3_vec = session
+                    .state
+                    .handle_msg2(&mut rng, vec![server_msg2])
+                    .map_err(|e| e.to_string())?;
+
+                if msg3_vec.is_empty() {
+                    return Err("handle_msg2 returned empty Vec<SignMsg3>".to_string());
+                }
+
+                session.round = 3;
+                encode_cbor_base64(&msg3_vec[0])?
+            };
+
+            // 返回 SignMsg3 P2P 信封（to=1）
+            let env = WireEnvelope::new(
+                session_id.clone(),
+                ProtocolType::Dsg,
+                3,
+                0,
+                Some(1),
+                msg3_payload,
+                None,
+            );
+            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+            let result = MpcRoundResult {
+                status: "in_progress".to_string(),
+                round: 3,
+                client_payload: Some(env_json),
+                error_message: None,
+            };
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        // ── Round 3：服务端发来 SignMsg3 — CRITICAL: SEC-01 enforcement ──
+        3 => {
+            let server_msg3: dsg::SignMsg3 = decode_cbor_base64(&server_env.payload)?;
+
+            // SEC-01: REMOVE session（防止 Round 3 重入；move 语义消耗 PreSignature）
+            let mut session = {
+                let mut sessions = SIGN_SESSIONS.lock().unwrap();
+                sessions
+                    .remove(&session_id)
+                    .ok_or_else(|| format!("sign session not found: {session_id}"))?
+            };
+
+            // SEC-01 运行时双重检查
+            if session.consumed {
+                return Err(format!("sign session {} already consumed", session_id));
+            }
+
+            // handle_msg3 → PreSignature（注意：无 rng 参数，与 DKG 不同）
+            let pre = session
+                .state
+                .handle_msg3(vec![server_msg3])
+                .map_err(|e| e.to_string())?;
+
+            // 立即消费 PreSignature（move 语义，Rust 编译器禁止再次使用）
+            let digest_bytes = session.digest.into_bytes();
+            let (partial, msg4) = create_partial_signature(pre, digest_bytes);
+
+            // 序列化 msg4 为 CBOR bytes（缓存供 Round 4 envelope 使用）
+            let mut msg4_buf = Vec::new();
+            ciborium::into_writer(&msg4, &mut msg4_buf)
+                .map_err(|e| format!("cbor encode msg4: {e}"))?;
+            let msg4_b64 = BASE64_STANDARD.encode(&msg4_buf);
+
+            // 更新 session：标记已消费，缓存 partial_sig 和 pending_msg4，重新插入
+            session.consumed = true;
+            session.partial_sig = Some(partial);
+            session.pending_msg4 = Some(msg4_buf);
+            session.round = 4;
+
+            {
+                let mut sessions = SIGN_SESSIONS.lock().unwrap();
+                sessions.insert(session_id.clone(), session);
+            }
+
+            // 返回 SignMsg4 broadcast 信封（to=None）
+            let env = WireEnvelope::new(
+                session_id.clone(),
+                ProtocolType::Dsg,
+                4,
+                0,
+                None,
+                msg4_b64,
+                None,
+            );
+            let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+            let result = MpcRoundResult {
+                status: "in_progress".to_string(),
+                round: 4,
+                client_payload: Some(env_json),
+                error_message: None,
+            };
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        // ── Round 4：服务端发来 SignMsg4，完成 DSG ───────────────────────
+        4 => {
+            let server_msg4: dsg::SignMsg4 = decode_cbor_base64(&server_env.payload)?;
+
+            // REMOVE session（最终清理）
+            let mut session = {
+                let mut sessions = SIGN_SESSIONS.lock().unwrap();
+                sessions
+                    .remove(&session_id)
+                    .ok_or_else(|| format!("sign session not found: {session_id}"))?
+            };
+
+            // 取出 PartialSignature（消耗 Option）
+            let partial = session
+                .partial_sig
+                .take()
+                .ok_or("partial_sig not set in Round 4")?;
+
+            // combine_signatures → Result<Signature, SignError>
+            let sig = combine_signatures(partial, vec![server_msg4])
+                .map_err(|e| e.to_string())?;
+
+            // 计算 recid via trial recovery
+            // MessageDigest 实现 Copy，Round 3 的 into_bytes() 不消耗字段，Round 4 可直接读取
+            let vk = VerifyingKey::from_affine(session.public_key)
+                .map_err(|e| format!("invalid public key: {e}"))?;
+
+            let hash_bytes = session.digest.into_bytes();
+
+            let recid = RecoveryId::trial_recovery_from_prehash(&vk, &hash_bytes, &sig)
+                .map_err(|e| format!("recid recovery failed: {e}"))?;
+
+            // 提取 r, s bytes
+            let (r_bytes, s_bytes) = sig.split_bytes();
+
+            let completed = SignCompletedPayload {
+                r: hex::encode(r_bytes),
+                s: hex::encode(s_bytes),
+                recid: recid.to_byte(),
+            };
+            let completed_json =
+                serde_json::to_string(&completed).map_err(|e| e.to_string())?;
+
+            let result = MpcRoundResult {
+                status: "completed".to_string(),
+                round: 4,
+                client_payload: Some(completed_json),
+                error_message: None,
+            };
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        _ => Err(format!(
+            "unexpected sign session state: round={current_round}"
+        )),
+    }
 }
 
 // ── Backup helpers ───────────────────────────────────────────────────
