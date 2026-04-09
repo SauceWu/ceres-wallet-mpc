@@ -50,19 +50,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRANS-01 | TBD | Pending |
-| TRANS-02 | TBD | Pending |
-| TRANS-03 | TBD | Pending |
-| TRANS-04 | TBD | Pending |
-| TRANS-05 | TBD | Pending |
-| INTEG-01 | TBD | Pending |
-| INTEG-02 | TBD | Pending |
-| INTEG-03 | TBD | Pending |
+| TRANS-01 | Phase 14 | Pending |
+| TRANS-02 | Phase 14 | Pending |
+| TRANS-03 | Phase 14 | Pending |
+| TRANS-04 | Phase 14 | Pending |
+| TRANS-05 | Phase 14 | Pending |
+| INTEG-01 | Phase 15 | Pending |
+| INTEG-02 | Phase 15 | Pending |
+| INTEG-03 | Phase 15 | Pending |
 
 **Coverage:**
 - v3.0 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8
+- Mapped to phases: 8
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-09*

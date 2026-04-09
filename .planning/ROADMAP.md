@@ -237,6 +237,40 @@ Plans:
 - [x] 13.1-03-PLAN.md — 集成测试全面重写：test_dkg/test_dsg/test_rotation/test_backup_export 适配 sl-dkls23 (REG-01, PROTO-01, PROTO-02, PROTO-03, AUX-01, AUX-02, SEC-01)
 - [x] 13.1-04-PLAN.md — FRB codegen 重新生成 + iOS/Android 交叉编译验证 + flutter analyze + 人工验证 (INFRA-02, INFRA-05, REG-02)
 
+---
+
+### Milestone v3.0: Transport Optimization
+
+## Phases
+
+- [ ] **Phase 14: WebSocket Transport 实现** - 新增 WebSocketMpcTransport 类，实现 MpcTransport 接口，支持自动连接、断线重连、JSON-RPC id 请求-响应匹配及超时/错误处理
+- [ ] **Phase 15: Example App 集成与文档** - Example app 展示 HTTP 和 WebSocket 双 transport 用法，更新 README/README_CN，CI 验证全通过
+
+## Phase Details
+
+### Phase 14: WebSocket Transport 实现
+**Goal**: 用户可以将 WebSocketMpcTransport 作为 MpcTransport 的 drop-in 替换，通过持久连接减少 4 轮协议的通信延迟
+**Depends on**: Phase 13.1
+**Requirements**: TRANS-01, TRANS-02, TRANS-03, TRANS-04, TRANS-05
+**Success Criteria** (what must be TRUE):
+  1. 调用 `WebSocketMpcTransport.send()` 时，客户端自动建立 WebSocket 连接（首次调用时连接，无需手动 connect）
+  2. WebSocket 意外断开后，下一次 `send()` 调用会自动重连，不需要调用方感知
+  3. 并发发出的多个 `send()` 请求通过 JSON-RPC `id` 字段各自匹配响应，不会串行阻塞
+  4. 连接或响应超时时，`send()` 抛出明确的异常类型（不挂起、不静默失败）
+  5. `HttpMpcTransport`（原有 HTTP 实现）无任何代码变动，可与 WebSocket transport 并存使用
+**Plans**: TBD
+
+### Phase 15: Example App 集成与文档
+**Goal**: 开发者可以通过 example app 和 README 快速理解并切换 HTTP / WebSocket 两种 transport
+**Depends on**: Phase 14
+**Requirements**: INTEG-01, INTEG-02, INTEG-03
+**Success Criteria** (what must be TRUE):
+  1. Example app 包含两种 transport 用法的可运行示例，切换 transport 只需替换一个构造参数
+  2. README 和 README_CN 均包含 WebSocket transport 的接入说明（安装、初始化、配置超时）
+  3. `flutter analyze` 无 error，`flutter test` 全部通过
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress Table
 
 | Phase | Plans Complete | Status | Completed |
@@ -249,3 +283,5 @@ Plans:
 | 12. Backup Envelope 与 Key Export | 2/2 | Complete    | 2026-04-09 |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 2/2 | Complete    | 2026-04-09 |
 | 13.1. sl-dkls23 迁移 | 4/4 | Complete    | 2026-04-09 |
+| 14. WebSocket Transport 实现 | 0/2 | Not started | - |
+| 15. Example App 集成与文档 | 0/2 | Not started | - |

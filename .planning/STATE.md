@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Transport Optimization
-status: Defining requirements
-stopped_at: Milestone v3.0 started
+status: Roadmap ready
+stopped_at: Roadmap created — Phase 14 ready to plan
 last_updated: "2026-04-09"
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -15,10 +15,10 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-09 — Milestone v3.0 started
+Phase: Phase 14 — WebSocket Transport 实现
+Plan: Not started
+Status: Roadmap ready — awaiting `/gsd-plan-phase 14`
+Last activity: 2026-04-09 — Roadmap v3.0 created
 
 ## Decisions
 
@@ -59,10 +59,13 @@ Last activity: 2026-04-09 — Milestone v3.0 started
 - [Phase 13.1]: [Phase 13.1]: SEC-01/SEC-02 tests use dummy channel pairs — new session structure has no protocol State field
 - [Phase 13.1]: MessageDigest inner field changed to pub to allow frb_generated.rs SseDecode/SseEncode access
 - [Phase 13.1]: flutter_rust_bridge_codegen must run from project root (flutter_rust_bridge.yaml is at root, not rust/)
+- [v3.0 Roadmap]: 纯 Dart milestone — 零 Rust 改动，WebSocket 为 MpcTransport 的 drop-in 实现
+- [v3.0 Roadmap]: 使用 web_socket_channel Flutter package，HTTP transport 保持不动
 
 ## Roadmap Evolution
 
 - Phase 13.1 inserted after Phase 13: sl-dkls23 迁移 — 将 dkls23-ll 替换为 sl-dkls23 高层 async API (URGENT)
+- v3.0 milestone started: Phase 14 (WebSocket Transport) + Phase 15 (Example App + 文档)
 
 ## Performance Metrics
 
@@ -86,5 +89,5 @@ Last activity: 2026-04-09 — Milestone v3.0 started
 
 ## Last Session
 
-Stopped at: Completed 13.1-04-PLAN.md
-Timestamp: 2026-04-09T02:59:41Z
+Stopped at: Roadmap v3.0 created — Phase 14 + Phase 15 defined
+Timestamp: 2026-04-09
