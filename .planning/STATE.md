@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Phase complete — ready for verification
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-04-09T03:27:15.776Z"
+status: Ready to execute
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-04-09T03:48:30.867Z"
 progress:
   total_phases: 13
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_plans: 8
+  completed_plans: 7
+  percent: 88
 ---
 
 ## Current Position
 
-Phase: 9 (DKG Keygen 4 轮协议) — EXECUTING
+Phase: 10 (DSG Signing 4 轮协议) — EXECUTING
 Plan: 2 of 2
 Completed Plan: 08-02 (WireEnvelope JSON 信封格式与冻结规范)
 Next: Phase 9
@@ -32,6 +32,9 @@ Next: Phase 9
 - [Phase 09]: commitment_2_list indexed by party_id: [my_c2(0), server_c2(1)] for 2-party DKG
 - [Phase 09]: Added rlib to Cargo.toml crate-type — required for integration tests to import ceres_mpc symbols
 - [Phase 09]: run_dkg_two_party() is pub helper reusable by Phase 10 DSG and Phase 11 Rotation tests (REG-01)
+- [Phase 10]: DerivationPath::from_str('m') as default master path for DSG signing (no BIP-32 derivation)
+- [Phase 10]: MessageDigest is Copy — into_bytes() in Round 3 does not invalidate session.digest for Round 4
+- [Phase 10]: SEC-01: Round 3 removes session from SIGN_SESSIONS before PreSignature creation, re-inserts with consumed=true
 
 ## Performance Metrics
 
@@ -41,8 +44,9 @@ Next: Phase 9
 | 08    | 02   | 185s     | 2     | 2     |
 | Phase 09 P01 | 900s | 2 tasks | 4 files |
 | Phase 09 P02 | 70s | 1 tasks | 2 files |
+| Phase 10 P01 | 225s | 2 tasks | 3 files |
 
 ## Last Session
 
-Stopped at: Completed 09-02-PLAN.md
+Stopped at: Completed 10-01-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z

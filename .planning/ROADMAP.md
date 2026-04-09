@@ -173,7 +173,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 10-01-PLAN.md — SignSession 实体 + derivation-path 依赖 + sign_start/sign_continue DSG 状态机 + recid 计算 (PROTO-02, SEC-01)
+- [x] 10-01-PLAN.md — SignSession 实体 + derivation-path 依赖 + sign_start/sign_continue DSG 状态机 + recid 计算 (PROTO-02, SEC-01)
 - [ ] 10-02-PLAN.md — DSG 双方模拟集成测试 + ecrecover 验证 + consumed session 拒绝测试 (PROTO-02, SEC-01)
 
 ### Phase 11: Key Rotation/Recovery 4 轮协议
@@ -218,7 +218,7 @@ Plans:
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
-| 10. DSG Signing 4 轮协议 | 0/2 | Planning complete | - |
+| 10. DSG Signing 4 轮协议 | 1/2 | In Progress|  |
 | 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
