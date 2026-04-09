@@ -170,7 +170,11 @@ Plans:
   2. 签名结果含 r、s、recid，可通过 ecrecover 还原签名者 EVM 地址
   3. PreSignature 对象在完成一次签名后无法被再次传入签名函数（类型系统或运行时强制消费）
   4. 尝试复用已消费 PreSignature 返回明确错误，不静默成功
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — SignSession 实体 + derivation-path 依赖 + sign_start/sign_continue DSG 状态机 + recid 计算 (PROTO-02, SEC-01)
+- [ ] 10-02-PLAN.md — DSG 双方模拟集成测试 + ecrecover 验证 + consumed session 拒绝测试 (PROTO-02, SEC-01)
 
 ### Phase 11: Key Rotation/Recovery 4 轮协议
 **Goal**: 基于 dkls23-ll 的 4 轮 rotation 协议完整运行，Session 具备 TTL 超时驱逐能力，rotationVersion 正确递增
@@ -214,7 +218,7 @@ Plans:
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
-| 10. DSG Signing 4 轮协议 | 0/? | Not started | - |
+| 10. DSG Signing 4 轮协议 | 0/2 | Planning complete | - |
 | 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
