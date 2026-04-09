@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Phase complete — ready for verification
-stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-04-09T03:53:44.053Z"
+status: Ready to execute
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-04-09T04:18:32.796Z"
 progress:
   total_phases: 13
   completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_plans: 10
+  completed_plans: 9
+  percent: 90
 ---
 
 ## Current Position
 
-Phase: 10 (DSG Signing 4 轮协议) — EXECUTING
+Phase: 11 (Key Rotation/Recovery 4 轮协议) — EXECUTING
 Plan: 2 of 2
 Completed Plan: 08-02 (WireEnvelope JSON 信封格式与冻结规范)
 Next: Phase 9
@@ -37,6 +37,10 @@ Next: Phase 9
 - [Phase 10]: SEC-01: Round 3 removes session from SIGN_SESSIONS before PreSignature creation, re-inserts with consumed=true
 - [Phase 10]: session module changed from pub(crate) to pub to allow integration test access to SIGN_SESSIONS for SEC-01 validation
 - [Phase 10]: SEC-01 test uses session layer simulation rather than API-layer WireEnvelope construction — simpler and equally valid for runtime enforcement validation
+- [Phase 11]: State::key_rotation returns Result<State, KeygenError> in locked version c348be1 — must .map_err().?
+- [Phase 11]: No finish_key_rotation in c348be1 — handle_msg4 directly returns new Keyshare with inherited public_key
+- [Phase 11]: TTL eviction uses single lock() scope for check+remove to prevent session leak (SEC-02)
+- [Phase 11]: current_rotation_version stored in RecoverySession, only incremented in Round 4 RecoveryCompletedPayload
 
 ## Performance Metrics
 
@@ -48,8 +52,9 @@ Next: Phase 9
 | Phase 09 P02 | 70s | 1 tasks | 2 files |
 | Phase 10 P01 | 225s | 2 tasks | 3 files |
 | Phase 10 P02 | 208s | 1 tasks | 2 files |
+| Phase 11 P01 | 166s | 2 tasks | 2 files |
 
 ## Last Session
 
-Stopped at: Completed 10-02-PLAN.md
+Stopped at: Completed 11-01-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z

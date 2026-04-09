@@ -188,7 +188,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — RecoverySession 实体 + TTL 常量 + recover_start/recover_continue 4 轮状态机 (PROTO-03, SEC-02)
+- [x] 11-01-PLAN.md — RecoverySession 实体 + TTL 常量 + recover_start/recover_continue 4 轮状态机 (PROTO-03, SEC-02)
 - [ ] 11-02-PLAN.md — Rotation 双方模拟集成测试 + 签名验证 + rotationVersion 递增 + TTL 驱逐测试 (PROTO-03, SEC-02)
 
 ### Phase 12: Backup Envelope 与 Key Export
@@ -223,6 +223,6 @@ Plans:
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
-| 11. Key Rotation/Recovery 4 轮协议 | 0/2 | Planning complete | - |
+| 11. Key Rotation/Recovery 4 轮协议 | 1/2 | In Progress|  |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
