@@ -9,8 +9,8 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Rust 依赖从 kms-secp256k1/curv-kzen/GMP 替换为 dkls23-ll，删除 build.rs 和 vendor/gmp/
-- [ ] **INFRA-02**: 本地 cargo build 通过 iOS（aarch64-apple-ios）+ Android（aarch64-linux-android）target
+- [x] **INFRA-01**: Rust 依赖从 kms-secp256k1/curv-kzen/GMP 替换为 dkls23-ll，删除 build.rs 和 vendor/gmp/
+- [x] **INFRA-02**: 本地 cargo build 通过 iOS（aarch64-apple-ios）+ Android（aarch64-linux-android）target
 - [ ] **INFRA-03**: GitHub Actions CI 交叉编译 iOS XCFramework + Android .so 产物发布
 - [x] **INFRA-04**: 定义 DKG/DSG/Rotation 各轮 wire format JSON 结构
 - [x] **INFRA-05**: flutter_rust_bridge codegen 重新生成，Dart MpcEngine 适配 4 轮模型
@@ -35,7 +35,7 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 ### Regression
 
 - [x] **REG-01**: 每个协议实现必须有 Rust 本地双方模拟测试
-- [ ] **REG-02**: 本地编译 + CI 编译双重门控
+- [x] **REG-02**: 本地编译 + CI 编译双重门控
 
 ## Future Requirements
 
@@ -67,8 +67,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 7 | Pending |
-| INFRA-02 | Phase 7 | Pending |
+| INFRA-01 | Phase 7 | Complete |
+| INFRA-02 | Phase 7 | Complete |
 | INFRA-03 | Phase 13 | Pending |
 | INFRA-04 | Phase 8 | Complete |
 | INFRA-05 | Phase 13 | Complete |
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEC-02 | Phase 11 | Complete |
 | SEC-03 | Phase 8 | Complete |
 | REG-01 | Phase 9 | Complete |
-| REG-02 | Phase 13 | Pending |
+| REG-02 | Phase 13 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 15 total

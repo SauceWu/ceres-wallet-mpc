@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Ready to execute
-stopped_at: Completed 13.1-03-PLAN.md
-last_updated: "2026-04-09T08:35:21.950Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 13.1-04-PLAN.md
+last_updated: "2026-04-09T08:40:40.535Z"
 progress:
   total_phases: 14
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 18
-  completed_plans: 17
-  percent: 94
+  completed_plans: 18
+  percent: 100
 ---
 
 ## Current Position
@@ -57,6 +57,8 @@ Next: Phase 9
 - [Phase 13.1]: [Phase 13.1]: tokio::test requires multi_thread flavor — sl-dkls23 dkg.rs:228 internally calls spawn_blocking
 - [Phase 13.1]: [Phase 13.1]: SimpleMessageRelay::connect() takes no args — one call per party, not connect(n)
 - [Phase 13.1]: [Phase 13.1]: SEC-01/SEC-02 tests use dummy channel pairs — new session structure has no protocol State field
+- [Phase 13.1]: MessageDigest inner field changed to pub to allow frb_generated.rs SseDecode/SseEncode access
+- [Phase 13.1]: flutter_rust_bridge_codegen must run from project root (flutter_rust_bridge.yaml is at root, not rust/)
 
 ## Roadmap Evolution
 
@@ -80,8 +82,9 @@ Next: Phase 9
 | Phase 13.1 P01 | 271s | 2 tasks | 6 files |
 | Phase 13.1 P02 | 304s | 2 tasks | 2 files |
 | Phase 13.1 P03 | 441s | 2 tasks | 4 files |
+| Phase 13.1 P04 | 194 | 2 tasks | 3 files |
 
 ## Last Session
 
-Stopped at: Completed 13.1-03-PLAN.md
+Stopped at: Completed 13.1-04-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z
