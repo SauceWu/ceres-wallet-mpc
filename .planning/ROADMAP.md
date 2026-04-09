@@ -216,7 +216,12 @@ Plans:
   3. GitHub Actions CI 在 push/PR 时自动构建 iOS XCFramework 和 Android .so，并作为 artifacts 上传
   4. CI 构建失败（任一 target）时 PR 无法合并（branch protection gate 生效）
   5. Dart MpcEngine 对外接口与 M1 约定的 start/continue 模式保持一致（调用方不需要感知 4 轮内部结构）
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 13-01-PLAN.md — FRB codegen 重新生成 + Dart bridge/client signStart 4 参数适配 + 测试更新 (INFRA-05)
+- [ ] 13-02-PLAN.md — CI 门控工作流 ci.yml 新建 + precompile.yml GMP 清理 + 人工验证 (INFRA-03, REG-02)
+
 **UI hint**: yes
 
 ## Progress Table
@@ -228,5 +233,5 @@ Plans:
 | 9. DKG Keygen 4 轮协议 | 2/2 | Complete   | 2026-04-09 |
 | 10. DSG Signing 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
 | 11. Key Rotation/Recovery 4 轮协议 | 2/2 | Complete    | 2026-04-09 |
-| 12. Backup Envelope 与 Key Export | 2/2 | Complete   | 2026-04-09 |
-| 13. FRB Codegen + Dart 层适配 + CI 门控 | 0/? | Not started | - |
+| 12. Backup Envelope 与 Key Export | 2/2 | Complete    | 2026-04-09 |
+| 13. FRB Codegen + Dart 层适配 + CI 门控 | 1/2 | In Progress|  |

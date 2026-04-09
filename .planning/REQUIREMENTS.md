@@ -13,7 +13,7 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 - [ ] **INFRA-02**: 本地 cargo build 通过 iOS（aarch64-apple-ios）+ Android（aarch64-linux-android）target
 - [ ] **INFRA-03**: GitHub Actions CI 交叉编译 iOS XCFramework + Android .so 产物发布
 - [x] **INFRA-04**: 定义 DKG/DSG/Rotation 各轮 wire format JSON 结构
-- [ ] **INFRA-05**: flutter_rust_bridge codegen 重新生成，Dart MpcEngine 适配 4 轮模型
+- [x] **INFRA-05**: flutter_rust_bridge codegen 重新生成，Dart MpcEngine 适配 4 轮模型
 
 ### Protocol
 
@@ -24,7 +24,7 @@ Requirements for milestone v2.0 DKLS23 Migration. Each maps to roadmap phases.
 ### Auxiliary
 
 - [x] **AUX-01**: Backup Envelope 适配 Keyshare 序列化格式（AES-256-GCM 逻辑不变）
-- [ ] **AUX-02**: Key Export 私钥重建（s_i 合并，Lagrange 插值）
+- [x] **AUX-02**: Key Export 私钥重建（s_i 合并，Lagrange 插值）
 
 ### Security
 
@@ -71,12 +71,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-02 | Phase 7 | Pending |
 | INFRA-03 | Phase 13 | Pending |
 | INFRA-04 | Phase 8 | Complete |
-| INFRA-05 | Phase 13 | Pending |
+| INFRA-05 | Phase 13 | Complete |
 | PROTO-01 | Phase 9 | Complete |
 | PROTO-02 | Phase 10 | Complete |
 | PROTO-03 | Phase 11 | Complete |
 | AUX-01 | Phase 12 | Complete |
-| AUX-02 | Phase 12 | Pending |
+| AUX-02 | Phase 12 | Complete |
 | SEC-01 | Phase 10 | Complete |
 | SEC-02 | Phase 11 | Complete |
 | SEC-03 | Phase 8 | Complete |

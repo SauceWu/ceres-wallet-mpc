@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: DKLS23 Migration
-status: Phase complete — ready for verification
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-04-09T04:50:05.849Z"
+status: Ready to execute
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-04-09T05:11:57.986Z"
 progress:
   total_phases: 13
   completed_phases: 6
-  total_plans: 12
-  completed_plans: 12
-  percent: 100
+  total_plans: 14
+  completed_plans: 13
+  percent: 93
 ---
 
 ## Current Position
 
-Phase: 12 (Backup Envelope 与 Key Export) — EXECUTING
+Phase: 13 (FRB Codegen + Dart 层适配 + CI 门控) — EXECUTING
 Plan: 2 of 2
 Completed Plan: 08-02 (WireEnvelope JSON 信封格式与冻结规范)
 Next: Phase 9
@@ -47,6 +47,7 @@ Next: Phase 9
 - [Phase 12]: Use JSON intermediate struct (KeyshareExportFields) to access pub(crate) s_i — serde serializes all fields regardless of visibility
 - [Phase 12]: EXPORTED_KEYS keyed by compressed public key hex in session.rs — consistent guard pattern with SIGN_SESSIONS
 - [Phase 12]: Lagrange 2-of-2 implemented manually with k256::Scalar — no sl_mpc_mate dependency needed for rank=0
+- [Phase 13]: FRB codegen 重新生成时同步产生了 lib.dart 和 api/types.dart（MessageDigest、WireEnvelope 的 Dart 绑定），纳入版本控制
 
 ## Performance Metrics
 
@@ -62,8 +63,9 @@ Next: Phase 9
 | Phase 11 P02 | 233s | 1 tasks | 1 files |
 | Phase 12 P01 | 39s | 1 tasks | 1 files |
 | Phase 12 P02 | 206s | 2 tasks | 3 files |
+| Phase 13 P01 | 137s | 2 tasks | 12 files |
 
 ## Last Session
 
-Stopped at: Completed 12-02-PLAN.md
+Stopped at: Completed 13-01-PLAN.md
 Timestamp: 2026-04-09T02:59:41Z
