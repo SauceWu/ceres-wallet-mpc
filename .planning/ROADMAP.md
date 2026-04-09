@@ -158,7 +158,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Cargo 依赖 + WireEnvelope step 字段 + KeygenSession 实体 + keygen_start/continue 状态机 (PROTO-01)
+- [x] 09-01-PLAN.md — Cargo 依赖 + WireEnvelope step 字段 + KeygenSession 实体 + keygen_start/continue 状态机 (PROTO-01)
 - [ ] 09-02-PLAN.md — DKG 双方模拟集成测试框架 + EVM 地址推导 + Keyshare 序列化验证 (PROTO-01, REG-01)
 
 ### Phase 10: DSG Signing 4 轮协议
@@ -213,7 +213,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 7. 依赖替换与本地双平台编译 | 0/2 | Planning complete | - |
 | 8. Wire Format 与安全类型定义 | 2/2 | Complete   | 2026-04-09 |
-| 9. DKG Keygen 4 轮协议 | 0/2 | Planning complete | - |
+| 9. DKG Keygen 4 轮协议 | 1/2 | In Progress|  |
 | 10. DSG Signing 4 轮协议 | 0/? | Not started | - |
 | 11. Key Rotation/Recovery 4 轮协议 | 0/? | Not started | - |
 | 12. Backup Envelope 与 Key Export | 0/? | Not started | - |
