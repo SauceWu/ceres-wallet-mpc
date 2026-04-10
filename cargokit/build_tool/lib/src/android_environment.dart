@@ -183,6 +183,18 @@ class AndroidEnvironment {
   }
 
   String _resolveToolchainPath(String ndkPath) {
+    final override =
+        Platform.environment['CARGOKIT_ANDROID_NDK_TOOLCHAIN_BIN'];
+    if (override != null && override.isNotEmpty) {
+      if (Directory(override).existsSync()) {
+        return override;
+      }
+      throw Exception(
+        'CARGOKIT_ANDROID_NDK_TOOLCHAIN_BIN points to a missing directory: '
+        '$override',
+      );
+    }
+
     final prebuiltDir =
         path.join(ndkPath, 'toolchains', 'llvm', 'prebuilt');
 
