@@ -123,8 +123,16 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
         get_runtime().block_on(tx_in.send(server_msg_bytes))
             .map_err(|e| format!("failed to send initial server msg: {e}"))?;
 
-        let client_msg = get_runtime().block_on(rx_out.recv())
-            .ok_or_else(|| "protocol task closed before producing first message".to_string())?;
+        let client_msg = match get_runtime().block_on(rx_out.recv()) {
+            Some(msg) => msg,
+            None => {
+                // Protocol task ended before producing output — get the actual error
+                let err = get_runtime().block_on(task_handle)
+                    .map_err(|e| format!("keygen task panicked: {e}"))
+                    .and_then(|r| r);
+                return Err(format!("keygen protocol failed on round 1: {:?}", err));
+            }
+        };
 
         KEYGEN_SESSIONS.lock().unwrap().insert(session_id.clone(), KeygenSession {
             tx_in, rx_out, task_handle: Some(task_handle),
