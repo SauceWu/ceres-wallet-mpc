@@ -82,19 +82,8 @@ class AndroidEnvironment {
   }
 
   Future<Map<String, String>> buildEnvironment() async {
-    final hostArch = Platform.isMacOS
-        ? "darwin-x86_64"
-        : (Platform.isLinux ? "linux-x86_64" : "windows-x86_64");
-
     final ndkPath = path.join(sdkPath, 'ndk', ndkVersion);
-    final toolchainPath = path.join(
-      ndkPath,
-      'toolchains',
-      'llvm',
-      'prebuilt',
-      hostArch,
-      'bin',
-    );
+    final toolchainPath = _resolveToolchainPath(ndkPath);
 
     final minSdkVersion =
         math.max(target.androidMinSdkVersion!, this.minSdkVersion);
@@ -191,5 +180,40 @@ class AndroidEnvironment {
     }
     rustFlags = '$rustFlags-L\x1f$workaroundDir';
     return rustFlags;
+  }
+
+  String _resolveToolchainPath(String ndkPath) {
+    final prebuiltDir =
+        path.join(ndkPath, 'toolchains', 'llvm', 'prebuilt');
+
+    final candidates = Platform.isMacOS
+        ? <String>[
+            if (_isArmMacHost()) 'darwin-arm64',
+            'darwin-x86_64',
+            'darwin-arm64',
+          ]
+        : (Platform.isLinux
+            ? <String>['linux-x86_64']
+            : <String>['windows-x86_64']);
+
+    for (final hostArch in candidates) {
+      final toolchainPath = path.join(prebuiltDir, hostArch, 'bin');
+      if (Directory(toolchainPath).existsSync()) {
+        return toolchainPath;
+      }
+    }
+
+    throw Exception(
+      'Failed to find Android NDK LLVM toolchain in $prebuiltDir. '
+      'Checked: ${candidates.join(', ')}',
+    );
+  }
+
+  bool _isArmMacHost() {
+    if (!Platform.isMacOS) {
+      return false;
+    }
+    final arch = (runCommand('arch', []).stdout as String).trim();
+    return arch == 'arm64';
   }
 }
