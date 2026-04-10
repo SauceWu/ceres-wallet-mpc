@@ -6,81 +6,49 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `decrypt_share_bytes`, `derive_aes_key`, `encrypt_share`, `instance_id_from_session`, `random_seed`
+// These functions are ignored because they are not marked as `pub`: `decrypt_share_bytes`, `derive_aes_key`, `encrypt_share`, `extract_pubkey_and_address`, `instance_id_from_session`, `make_completed`, `make_in_progress`, `parse_server_envelope`, `random_seed`
 
-/// DKG 协议启动入口。
-/// server_payload: 服务端 Round 1 WireEnvelope JSON（包含不透明协议字节 Base64）
-/// 返回: MpcRoundResult JSON (status="in_progress", round=1, client_payload=WireEnvelope JSON)
-Future<String> keygenStart({
+/// DKG 协议统一入口。round==1 创建 session，round>1 推进已有 session。
+Future<String> keygen({
   required String sessionId,
+  required int round,
   required String serverPayload,
-}) => RustLib.instance.api.crateApiMpcEngineKeygenStart(
+}) => RustLib.instance.api.crateApiMpcEngineKeygen(
   sessionId: sessionId,
+  round: round,
   serverPayload: serverPayload,
 );
 
-/// DKG 协议轮次推进入口。
-/// server_payload: 服务端当前轮次 WireEnvelope JSON
-/// 返回: MpcRoundResult JSON（in_progress 或 completed）
-Future<String> keygenContinue({
+/// key_refresh 协议统一入口。round==1 需要 backup_share 和 current_rotation_version。
+Future<String> recover({
   required String sessionId,
+  required int round,
   required String serverPayload,
-}) => RustLib.instance.api.crateApiMpcEngineKeygenContinue(
+  String? backupShare,
+  int? currentRotationVersion,
+}) => RustLib.instance.api.crateApiMpcEngineRecover(
   sessionId: sessionId,
+  round: round,
   serverPayload: serverPayload,
-);
-
-Future<String> recoverStart({
-  required String sessionId,
-  required String backupShare,
-  required String serverPayload,
-  required int currentRotationVersion,
-}) => RustLib.instance.api.crateApiMpcEngineRecoverStart(
-  sessionId: sessionId,
   backupShare: backupShare,
-  serverPayload: serverPayload,
   currentRotationVersion: currentRotationVersion,
 );
 
-Future<String> recoverContinue({
+/// DSG 协议统一入口。round==1 需要 share 和 message_hash_hex。
+Future<String> sign({
   required String sessionId,
+  required int round,
   required String serverPayload,
-}) => RustLib.instance.api.crateApiMpcEngineRecoverContinue(
+  String? share,
+  String? messageHashHex,
+}) => RustLib.instance.api.crateApiMpcEngineSign(
   sessionId: sessionId,
+  round: round,
   serverPayload: serverPayload,
-);
-
-/// DSG 协议启动入口。
-/// share: Base64 编码的 Keyshare 字节（来自本地安全存储）
-/// message_hash_hex: 32 字节消息摘要的 hex 编码（SEC-03 边界验证）
-/// server_payload: 服务端 Round 1 WireEnvelope JSON
-/// 返回: MpcRoundResult JSON (status="in_progress", client_payload=WireEnvelope JSON)
-Future<String> signStart({
-  required String sessionId,
-  required String share,
-  required String messageHashHex,
-  required String serverPayload,
-}) => RustLib.instance.api.crateApiMpcEngineSignStart(
-  sessionId: sessionId,
   share: share,
   messageHashHex: messageHashHex,
-  serverPayload: serverPayload,
 );
 
-/// DSG 协议轮次推进入口。
-/// server_payload: 服务端当前轮次 WireEnvelope JSON
-/// 返回: MpcRoundResult JSON（in_progress 或 completed）
-Future<String> signContinue({
-  required String sessionId,
-  required String serverPayload,
-}) => RustLib.instance.api.crateApiMpcEngineSignContinue(
-  sessionId: sessionId,
-  serverPayload: serverPayload,
-);
-
-/// Derive a backup envelope from a live share and user secret.
-/// local_encrypted_share is a Base64-encoded Keyshare bytes string.
-/// Uses AES-256-GCM with HKDF-SHA256 key derivation.
 Future<String> deriveBackupEnvelope({
   required String localEncryptedShare,
   required String userBackupSecret,
@@ -91,8 +59,6 @@ Future<String> deriveBackupEnvelope({
   createdAt: createdAt,
 );
 
-/// Decrypt a backup envelope to recover the device backup share.
-/// Returns the original local_encrypted_share string (Base64 Keyshare bytes).
 Future<String> decryptBackupShare({
   required String encryptedEnvelope,
   required String userBackupSecret,
@@ -101,8 +67,6 @@ Future<String> decryptBackupShare({
   userBackupSecret: userBackupSecret,
 );
 
-/// Export private key by combining two Keyshares using sl-dkls23 combine_shares.
-/// Replaces manual Lagrange interpolation with library function.
 Future<String> exportPrivateKey({
   required String localShare,
   required String serverSharePrivate,

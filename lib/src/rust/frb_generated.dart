@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1609076011;
+  int get rustContentHash => -2003024160;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -106,13 +106,9 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiSimpleInitApp();
 
-  Future<String> crateApiMpcEngineKeygenContinue({
+  Future<String> crateApiMpcEngineKeygen({
     required String sessionId,
-    required String serverPayload,
-  });
-
-  Future<String> crateApiMpcEngineKeygenStart({
-    required String sessionId,
+    required int round,
     required String serverPayload,
   });
 
@@ -128,28 +124,20 @@ abstract class RustLibApi extends BaseApi {
     required U8Array32 bytes,
   });
 
-  Future<String> crateApiMpcEngineRecoverContinue({
+  Future<String> crateApiMpcEngineRecover({
     required String sessionId,
+    required int round,
     required String serverPayload,
+    String? backupShare,
+    int? currentRotationVersion,
   });
 
-  Future<String> crateApiMpcEngineRecoverStart({
+  Future<String> crateApiMpcEngineSign({
     required String sessionId,
-    required String backupShare,
+    required int round,
     required String serverPayload,
-    required int currentRotationVersion,
-  });
-
-  Future<String> crateApiMpcEngineSignContinue({
-    required String sessionId,
-    required String serverPayload,
-  });
-
-  Future<String> crateApiMpcEngineSignStart({
-    required String sessionId,
-    required String share,
-    required String messageHashHex,
-    required String serverPayload,
+    String? share,
+    String? messageHashHex,
   });
 
   Future<WireEnvelope> crateApiTypesWireEnvelopeNew({
@@ -362,8 +350,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "init_app", argNames: []);
 
   @override
-  Future<String> crateApiMpcEngineKeygenContinue({
+  Future<String> crateApiMpcEngineKeygen({
     required String sessionId,
+    required int round,
     required String serverPayload,
   }) {
     return handler.executeNormal(
@@ -371,6 +360,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(sessionId, serializer);
+          sse_encode_i_32(round, serializer);
           sse_encode_String(serverPayload, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -383,53 +373,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiMpcEngineKeygenContinueConstMeta,
-        argValues: [sessionId, serverPayload],
+        constMeta: kCrateApiMpcEngineKeygenConstMeta,
+        argValues: [sessionId, round, serverPayload],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiMpcEngineKeygenContinueConstMeta =>
-      const TaskConstMeta(
-        debugName: "keygen_continue",
-        argNames: ["sessionId", "serverPayload"],
-      );
-
-  @override
-  Future<String> crateApiMpcEngineKeygenStart({
-    required String sessionId,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 8,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineKeygenStartConstMeta,
-        argValues: [sessionId, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiMpcEngineKeygenStartConstMeta =>
-      const TaskConstMeta(
-        debugName: "keygen_start",
-        argNames: ["sessionId", "serverPayload"],
-      );
+  TaskConstMeta get kCrateApiMpcEngineKeygenConstMeta => const TaskConstMeta(
+    debugName: "keygen",
+    argNames: ["sessionId", "round", "serverPayload"],
+  );
 
   @override
   Future<void> crateApiTypesMessageDigestAsBytes({
@@ -443,7 +397,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 8,
             port: port_,
           );
         },
@@ -474,7 +428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 9,
             port: port_,
           );
         },
@@ -507,7 +461,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 10,
             port: port_,
           );
         },
@@ -540,7 +494,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 11,
             port: port_,
           );
         },
@@ -559,16 +513,74 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "message_digest_new", argNames: ["bytes"]);
 
   @override
-  Future<String> crateApiMpcEngineRecoverContinue({
+  Future<String> crateApiMpcEngineRecover({
     required String sessionId,
+    required int round,
     required String serverPayload,
+    String? backupShare,
+    int? currentRotationVersion,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(sessionId, serializer);
+          sse_encode_i_32(round, serializer);
           sse_encode_String(serverPayload, serializer);
+          sse_encode_opt_String(backupShare, serializer);
+          sse_encode_opt_box_autoadd_i_32(currentRotationVersion, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMpcEngineRecoverConstMeta,
+        argValues: [
+          sessionId,
+          round,
+          serverPayload,
+          backupShare,
+          currentRotationVersion,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMpcEngineRecoverConstMeta => const TaskConstMeta(
+    debugName: "recover",
+    argNames: [
+      "sessionId",
+      "round",
+      "serverPayload",
+      "backupShare",
+      "currentRotationVersion",
+    ],
+  );
+
+  @override
+  Future<String> crateApiMpcEngineSign({
+    required String sessionId,
+    required int round,
+    required String serverPayload,
+    String? share,
+    String? messageHashHex,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sessionId, serializer);
+          sse_encode_i_32(round, serializer);
+          sse_encode_String(serverPayload, serializer);
+          sse_encode_opt_String(share, serializer);
+          sse_encode_opt_String(messageHashHex, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -580,139 +592,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiMpcEngineRecoverContinueConstMeta,
-        argValues: [sessionId, serverPayload],
+        constMeta: kCrateApiMpcEngineSignConstMeta,
+        argValues: [sessionId, round, serverPayload, share, messageHashHex],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiMpcEngineRecoverContinueConstMeta =>
-      const TaskConstMeta(
-        debugName: "recover_continue",
-        argNames: ["sessionId", "serverPayload"],
-      );
-
-  @override
-  Future<String> crateApiMpcEngineRecoverStart({
-    required String sessionId,
-    required String backupShare,
-    required String serverPayload,
-    required int currentRotationVersion,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(backupShare, serializer);
-          sse_encode_String(serverPayload, serializer);
-          sse_encode_i_32(currentRotationVersion, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 14,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineRecoverStartConstMeta,
-        argValues: [
-          sessionId,
-          backupShare,
-          serverPayload,
-          currentRotationVersion,
-        ],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiMpcEngineRecoverStartConstMeta =>
-      const TaskConstMeta(
-        debugName: "recover_start",
-        argNames: [
-          "sessionId",
-          "backupShare",
-          "serverPayload",
-          "currentRotationVersion",
-        ],
-      );
-
-  @override
-  Future<String> crateApiMpcEngineSignContinue({
-    required String sessionId,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 15,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineSignContinueConstMeta,
-        argValues: [sessionId, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiMpcEngineSignContinueConstMeta =>
-      const TaskConstMeta(
-        debugName: "sign_continue",
-        argNames: ["sessionId", "serverPayload"],
-      );
-
-  @override
-  Future<String> crateApiMpcEngineSignStart({
-    required String sessionId,
-    required String share,
-    required String messageHashHex,
-    required String serverPayload,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(sessionId, serializer);
-          sse_encode_String(share, serializer);
-          sse_encode_String(messageHashHex, serializer);
-          sse_encode_String(serverPayload, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 16,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiMpcEngineSignStartConstMeta,
-        argValues: [sessionId, share, messageHashHex, serverPayload],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiMpcEngineSignStartConstMeta => const TaskConstMeta(
-    debugName: "sign_start",
-    argNames: ["sessionId", "share", "messageHashHex", "serverPayload"],
+  TaskConstMeta get kCrateApiMpcEngineSignConstMeta => const TaskConstMeta(
+    debugName: "sign",
+    argNames: [
+      "sessionId",
+      "round",
+      "serverPayload",
+      "share",
+      "messageHashHex",
+    ],
   );
 
   @override
@@ -739,7 +634,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 14,
             port: port_,
           );
         },
@@ -772,6 +667,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -817,6 +718,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_i_32(raw);
   }
 
   @protected
@@ -875,6 +782,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_i_32(deserializer));
+  }
+
+  @protected
   MessageDigest sse_decode_box_autoadd_message_digest(
     SseDeserializer deserializer,
   ) {
@@ -921,6 +834,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_i_32(deserializer));
     } else {
       return null;
     }
@@ -998,6 +922,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_message_digest(
     MessageDigest self,
     SseSerializer serializer,
@@ -1053,6 +983,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_i_32(self, serializer);
     }
   }
 
