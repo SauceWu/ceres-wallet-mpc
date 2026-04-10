@@ -68,7 +68,7 @@ fn make_in_progress(session_id: &str, protocol: ProtocolType, round: u8, client_
     let env = WireEnvelope::new(session_id.to_string(), protocol, round, 0, Some(1), client_b64, None);
     let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
     let result = MpcRoundResult {
-        status: "in_progress".to_string(),
+        status: "continue".to_string(),
         round: round as i32,
         client_payload: Some(env_json),
         error_message: None,
