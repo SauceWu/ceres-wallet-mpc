@@ -4,19 +4,38 @@
 /// Uses [MockMpcTransport] to run without a real server.
 ///
 /// For production usage with a real server, see [http_transport_example.dart].
+// ignore_for_file: implementation_imports, invalid_use_of_internal_member
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:ceres_mpc/ceres_mpc.dart';
 import 'package:ceres_mpc/src/bridge/mpc_engine.dart';
 import 'package:ceres_mpc/src/rust/frb_generated.dart';
 
+import 'http_transport_example.dart';
 import 'mock_engine.dart';
 import 'mock_transport.dart';
+import 'ws_transport_example.dart';
 
 /// Set to true to use mock engine (no Rust crypto, for UI testing).
-/// Set to false to use real Rust engine (requires real server or will fail with mock transport).
-const _useMockEngine = true;
+/// Set to false to use real Rust engine (requires real server).
+const _useMockEngine = false;
+
+enum ExampleTransportMode {
+  mock('Mock', 'Local demo transport with no backend required.'),
+  http('HTTP', 'Classic JSON-RPC over HTTP. Requires a real MPC backend.'),
+  websocket(
+    'WebSocket',
+    'Persistent JSON-RPC over WebSocket with reconnect support.',
+  );
+
+  const ExampleTransportMode(this.label, this.description);
+
+  final String label;
+  final String description;
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,7 +67,15 @@ class ExampleHomePage extends StatefulWidget {
 
 class _ExampleHomePageState extends State<ExampleHomePage> {
   final _logs = <String>[];
-  late final MpcClient _client;
+  late MpcClient _client;
+  late MpcTransport _transport;
+  final _httpUrlController = TextEditingController(
+    text: 'http://127.0.0.1:3000/rpc',
+  );
+  final _wsUrlController = TextEditingController(
+    text: 'ws://127.0.0.1:3000/ws',
+  );
+  ExampleTransportMode _transportMode = ExampleTransportMode.http;
 
   // Stored keygen result for recovery/sign demos
   KeygenResult? _lastKeygen;
@@ -56,24 +83,15 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
   @override
   void initState() {
     super.initState();
+    _rebuildClient(logChange: false);
+  }
 
-    // ─────────────────────────────────────────────────────────────
-    // Setup: Create MpcClient with your transport implementation.
-    //
-    // In production, replace MockMpcTransport with HttpMpcTransport:
-    //
-    //   final transport = HttpMpcTransport(
-    //     baseUrl: 'https://your-server.com/api/mpc',
-    //     authToken: 'Bearer ...',
-    //   );
-    // ─────────────────────────────────────────────────────────────
-    _client = MpcClient(
-      // ignore: invalid_use_of_internal_member
-      engine: _useMockEngine
-          ? MockMpcEngine()
-          : MpcEngine(RustLib.instance.api),
-      transport: MockMpcTransport(),
-    );
+  @override
+  void dispose() {
+    _httpUrlController.dispose();
+    _wsUrlController.dispose();
+    unawaited(_disposeTransport(_transport));
+    super.dispose();
   }
 
   void _log(String message) {
@@ -82,6 +100,149 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
 
   void _clearLogs() {
     setState(() => _logs.clear());
+  }
+
+  Future<void> _switchTransport(ExampleTransportMode mode) async {
+    if (_transportMode == mode) return;
+    await _disposeTransport(_transport);
+    setState(() {
+      _transportMode = mode;
+      _lastKeygen = null;
+    });
+    _rebuildClient();
+  }
+
+  void _rebuildClient({bool logChange = true}) {
+    _transport = _createTransport();
+    _client = MpcClient(
+      engine: _useMockEngine
+          ? MockMpcEngine()
+          : MpcEngine(RustLib.instance.api),
+      transport: _transport,
+    );
+    if (logChange) {
+      _log('Transport switched to ${_transportMode.label}.');
+      _log(_transportMode.description);
+      if (_transportMode == ExampleTransportMode.mock) {
+        _log('Mock mode stays fully runnable without a backend.');
+      } else {
+        _log('Update the endpoint below and connect to a real MPC server.');
+      }
+    }
+  }
+
+  MpcTransport _createTransport() {
+    return switch (_transportMode) {
+      ExampleTransportMode.mock => MockMpcTransport(),
+      ExampleTransportMode.http => HttpMpcTransport(
+        rpcUrl: _httpUrlController.text.trim(),
+      ),
+      ExampleTransportMode.websocket => WebSocketMpcTransport(
+        wsUrl: _wsUrlController.text.trim(),
+      ),
+    };
+  }
+
+  Future<void> _disposeTransport(MpcTransport transport) async {
+    if (transport is WebSocketMpcTransport) {
+      await transport.close();
+    }
+  }
+
+  Widget _buildTransportCard() {
+    final endpointController = switch (_transportMode) {
+      ExampleTransportMode.http => _httpUrlController,
+      ExampleTransportMode.websocket => _wsUrlController,
+      ExampleTransportMode.mock => null,
+    };
+
+    return Card(
+      margin: const EdgeInsets.all(8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Transport Mode',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<ExampleTransportMode>(
+              segments: ExampleTransportMode.values
+                  .map(
+                    (mode) => ButtonSegment<ExampleTransportMode>(
+                      value: mode,
+                      label: Text(mode.label),
+                    ),
+                  )
+                  .toList(),
+              selected: {_transportMode},
+              onSelectionChanged: (selection) {
+                unawaited(_switchTransport(selection.first));
+              },
+            ),
+            const SizedBox(height: 12),
+            Text(_transportMode.description),
+            if (endpointController != null) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: endpointController,
+                decoration: InputDecoration(
+                  labelText: _transportMode == ExampleTransportMode.http
+                      ? 'HTTP RPC URL'
+                      : 'WebSocket URL',
+                  border: const OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _rebuildClient(),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tip: switching transport only changes the injected constructor argument.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'Mock mode uses in-memory server behavior so the example remains runnable offline.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            const SizedBox(height: 12),
+            SelectableText(
+              _transportSnippet(),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _transportSnippet() {
+    return switch (_transportMode) {
+      ExampleTransportMode.mock => '''
+final client = MpcClient(
+  engine: MockMpcEngine(),
+  transport: MockMpcTransport(),
+);''',
+      ExampleTransportMode.http => '''
+final client = MpcClient(
+  engine: MpcEngine(RustLib.instance.api),
+  transport: HttpMpcTransport(
+    rpcUrl: '${_httpUrlController.text.trim()}',
+  ),
+);''',
+      ExampleTransportMode.websocket => '''
+final client = MpcClient(
+  engine: MpcEngine(RustLib.instance.api),
+  transport: WebSocketMpcTransport(
+    wsUrl: '${_wsUrlController.text.trim()}',
+  ),
+);''',
+    };
   }
 
   // ── Example 1: Keygen ───────────────────────────────────────────
@@ -114,8 +275,8 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
       _log('Protocol error: ${e.message} (round: ${e.round})');
     } on MpcTransportException catch (e) {
       _log('Transport error: ${e.message} (method: ${e.method})');
-    }catch (e) {
-      print('Unexpected error during keygen: $e');
+    } catch (e) {
+      debugPrint('Unexpected error during keygen: $e');
       _log('Unexpected error: $e');
     }
   }
@@ -287,6 +448,7 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
       appBar: AppBar(title: const Text('ceres_mpc Example')),
       body: Column(
         children: [
+          _buildTransportCard(),
           // Action buttons
           Padding(
             padding: const EdgeInsets.all(8.0),
