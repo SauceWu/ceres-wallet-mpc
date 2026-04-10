@@ -6,9 +6,12 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `decrypt_share_bytes`, `derive_aes_key`, `encrypt_share`, `extract_pubkey_and_address`, `instance_id_from_session`, `make_completed`, `make_in_progress`, `parse_server_envelope`, `random_seed`
+// These functions are ignored because they are not marked as `pub`: `collect_all`, `decrypt_share_bytes`, `derive_aes_key`, `encrypt_share`, `extract_pubkey_and_address`, `inject_all`, `instance_id_from_session`, `make_completed`, `make_in_progress_batch`, `parse_server_envelope`, `random_seed`
 
-/// DKG 协议统一入口。round==1 创建 session，round>1 推进已有 session。
+/// DKG 协议统一入口。
+/// round==0: 收集模式 — 不发消息，直接 join task 获取 Keyshare（用于服务端先完成的情况）
+/// round==1: 创建 session
+/// round>1: 推进已有 session
 Future<String> keygen({
   required String sessionId,
   required int round,

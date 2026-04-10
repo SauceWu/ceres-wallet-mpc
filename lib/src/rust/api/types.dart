@@ -71,11 +71,13 @@ class WireEnvelope {
   /// payload 编码方式（默认 "cbor_base64"）
   final String payloadEncoding;
 
-  /// 编码后的 dkls23-ll 消息（Base64 编码的 CBOR 字节或 JSON string）
+  /// 单条消息（Base64 编码）— 向后兼容
   final String payload;
 
-  /// 可选步骤标识，用于 Round 3a/3b 区分：
-  /// Some("commitment") = commitment_2 广播，Some("msg3") = KeygenMsg3 P2P，None = 其他
+  /// 批量消息（Base64 编码数组）— 优先使用，减少 HTTP 往返
+  final List<String>? payloads;
+
+  /// 可选步骤标识
   final String? step;
 
   const WireEnvelope({
@@ -86,8 +88,13 @@ class WireEnvelope {
     this.toId,
     required this.payloadEncoding,
     required this.payload,
+    this.payloads,
     this.step,
   });
+
+  /// 提取所有 payload bytes（兼容单条和批量）
+  Future<List<Uint8List>> decodeAllPayloads() => RustLib.instance.api
+      .crateApiTypesWireEnvelopeDecodeAllPayloads(that: this);
 
   // HINT: Make it `#[frb(sync)]` to let it become the default constructor of Dart class.
   /// 构造新信封，payload_encoding 默认为 "cbor_base64"
@@ -109,6 +116,23 @@ class WireEnvelope {
     step: step,
   );
 
+  /// 批量消息构造 — 多条 Base64 payload 打包
+  static Future<WireEnvelope> newBatch({
+    required String sessionId,
+    required ProtocolType protocol,
+    required int round,
+    required int fromId,
+    int? toId,
+    required List<String> payloads,
+  }) => RustLib.instance.api.crateApiTypesWireEnvelopeNewBatch(
+    sessionId: sessionId,
+    protocol: protocol,
+    round: round,
+    fromId: fromId,
+    toId: toId,
+    payloads: payloads,
+  );
+
   @override
   int get hashCode =>
       sessionId.hashCode ^
@@ -118,6 +142,7 @@ class WireEnvelope {
       toId.hashCode ^
       payloadEncoding.hashCode ^
       payload.hashCode ^
+      payloads.hashCode ^
       step.hashCode;
 
   @override
@@ -132,5 +157,6 @@ class WireEnvelope {
           toId == other.toId &&
           payloadEncoding == other.payloadEncoding &&
           payload == other.payload &&
+          payloads == other.payloads &&
           step == other.step;
 }

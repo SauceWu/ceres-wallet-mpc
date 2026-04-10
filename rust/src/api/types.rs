@@ -90,10 +90,13 @@ pub struct WireEnvelope {
     pub to_id: Option<u8>,
     /// payload 编码方式（默认 "cbor_base64"）
     pub payload_encoding: String,
-    /// 编码后的 dkls23-ll 消息（Base64 编码的 CBOR 字节或 JSON string）
+    /// 单条消息（Base64 编码）— 向后兼容
+    #[serde(default)]
     pub payload: String,
-    /// 可选步骤标识，用于 Round 3a/3b 区分：
-    /// Some("commitment") = commitment_2 广播，Some("msg3") = KeygenMsg3 P2P，None = 其他
+    /// 批量消息（Base64 编码数组）— 优先使用，减少 HTTP 往返
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payloads: Option<Vec<String>>,
+    /// 可选步骤标识
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
 }
@@ -117,7 +120,44 @@ impl WireEnvelope {
             to_id,
             payload_encoding: "cbor_base64".to_string(),
             payload,
+            payloads: None,
             step,
+        }
+    }
+
+    /// 批量消息构造 — 多条 Base64 payload 打包
+    pub fn new_batch(
+        session_id: String,
+        protocol: ProtocolType,
+        round: u8,
+        from_id: u8,
+        to_id: Option<u8>,
+        payloads: Vec<String>,
+    ) -> Self {
+        Self {
+            session_id,
+            protocol,
+            round,
+            from_id,
+            to_id,
+            payload_encoding: "cbor_base64".to_string(),
+            payload: String::new(),
+            payloads: Some(payloads),
+            step: None,
+        }
+    }
+
+    /// 提取所有 payload bytes（兼容单条和批量）
+    pub fn decode_all_payloads(&self) -> Result<Vec<Vec<u8>>, String> {
+        use base64::engine::general_purpose::STANDARD as B64;
+        use base64::Engine as _;
+
+        if let Some(ref payloads) = self.payloads {
+            payloads.iter()
+                .map(|p| B64.decode(p).map_err(|e| format!("base64 decode: {e}")))
+                .collect()
+        } else {
+            Ok(vec![B64.decode(&self.payload).map_err(|e| format!("base64 decode: {e}"))?])
         }
     }
 }
