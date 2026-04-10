@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-linux-android
+
+      - name: Install Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Rust build check - iOS
+        working-directory: rust
+        run: cargo build --target aarch64-apple-ios --release
+
+      - name: Rust build check - Android
+        working-directory: rust
+        shell: bash
+        run: |
+          PREBUILT_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt"
+          if [ -d "$PREBUILT_ROOT/darwin-arm64/bin" ]; then
+            TOOLCHAIN_BIN="$PREBUILT_ROOT/darwin-arm64/bin"
+          else
+            TOOLCHAIN_BIN="$PREBUILT_ROOT/darwin-x86_64/bin"
+          fi
+
+          export CC_aarch64_linux_android="$TOOLCHAIN_BIN/aarch64-linux-android21-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN_BIN/aarch64-linux-android21-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN_BIN/llvm-ar"
+          export RANLIB_aarch64_linux_android="$TOOLCHAIN_BIN/llvm-ranlib"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+
+          cargo build --target aarch64-linux-android --release
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Flutter analyze
+        run: flutter analyze
+
+      - name: Flutter test
+        run: flutter test

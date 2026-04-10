@@ -1,0 +1,11 @@
+.DS_Store
+.claude/
+.fvm/
+.fvmrc
+.github/
+.idea/
+.planning/
+.vscode/
+build/
+rust/target/
+**/doc/api/
