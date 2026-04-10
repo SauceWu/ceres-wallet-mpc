@@ -15,6 +15,7 @@
 - **密钥导出（Export）** -- 将 MPC 钱包导出为普通钱包，重建完整私钥
 - **EVM 地址派生** -- 从联合公钥推导 EIP-55 校验和地址
 - **传输层无关** -- 宿主应用通过 `MpcTransport` 注入自己的网络层
+- **WebSocket 传输示例** -- example app 同时包含 HTTP 与 WebSocket transport 参考实现
 
 > **服务端如何对接？** 参阅 [服务端集成指南](doc/SERVER_INTEGRATION_CN.md)
 
@@ -84,6 +85,7 @@ dependencies:
   ceres_mpc:
     git:
       url: https://github.com/SauceWu/ceres-mpc.git
+  web_socket_channel: ^3.0.3 # 仅在使用 WebSocketMpcTransport 时需要
 ```
 
 ### 使用示例
@@ -94,48 +96,31 @@ import 'package:ceres_mpc/ceres_mpc.dart';
 // 1. 实现传输层（你的服务端通信）
 class MyTransport implements MpcTransport {
   @override
-  Future<String> send(String endpoint, String payload) async {
-    // POST 到你的 MPC 服务端，返回响应体
+  Future<String> send(String payload) async {
+    // 将 JSON-RPC payload 发送到你的 MPC 服务端，并返回原始响应体
   }
 }
-
-// 2. 初始化客户端
-final client = MpcClient(
-  engine: MpcEngine(RustLib.instance.api),
-  transport: MyTransport(),
-);
-
-// 3. 密钥生成
-final keygenResult = await client.keygen();
-print(keygenResult.address);    // 0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18
-print(keygenResult.publicKey);  // hex 编码的未压缩公钥
-// 将 keygenResult.localEncryptedShare 安全存储在设备上
-
-// 4. 交易签名
-final signResult = await client.sign(
-  mpcKeyId: keygenResult.mpcKeyId,
-  messageHash: keccak256HashHex,  // 32 字节 hex，无 0x 前缀
-  localEncryptedShare: keygenResult.localEncryptedShare,
-);
-// signResult.r, signResult.s, signResult.recid -> 组装签名交易
-
-// 5. 密钥恢复
-final recoveryResult = await client.recover(
-  mpcKeyId: keygenResult.mpcKeyId,
-  encryptedBackupShare: backupEnvelope,
-  userBackupSecret: userSecret,
-  currentRotationVersion: keygenResult.rotationVersion,
-);
-// recoveryResult.address == keygenResult.address （地址不变）
-
-// 6. 导出为普通钱包（从 MPC 迁移）
-final exportResult = await client.exportPrivateKey(
-  mpcKeyId: keygenResult.mpcKeyId,
-  localEncryptedShare: keygenResult.localEncryptedShare,
-);
-// exportResult.privateKey -> 导入 MetaMask/Trust Wallet
-// 注意：导出后 MPC 密钥已泄露，应禁用 MPC 操作
 ```
+
+完整可运行示例参阅 [`example/README.md`](example/README.md)，其中包含 transport 切换说明。
+
+### WebSocket 传输
+
+example app 提供了 `WebSocketMpcTransport` 参考实现，可在不改变 MPC client 流程的前提下替换 HTTP transport。
+
+```dart
+final transport = WebSocketMpcTransport(
+  wsUrl: 'ws://your-mpc-server.com/ws',
+  timeout: const Duration(seconds: 30),
+);
+```
+
+行为说明：
+
+- 首次 `send()` 时懒连接
+- 并发请求通过 JSON-RPC `id` 匹配响应
+- 断线后在下一次请求时自动重连
+- 连接或响应超时时抛出 `WsTransportTimeoutException`
 
 ## 项目结构
 
@@ -164,57 +149,39 @@ rust/
 
 ## 协议流程
 
-### 密钥生成（4 轮内部，2 次请求往返）
+### 密钥生成（DKLs23 4 轮，4 次 HTTP 往返）
 
 ```
 客户端 (Party2)                      服务端 (Party1)
      |                                  |
-     |  POST /keygen/start              |
+     |  RPC keygen_start                |
      |--------------------------------->|
-     |  { sessionId, serverPayload }    |
+     |  { sessionId, WireEnvelope R1 }  |  DKG 第 1 轮
      |<---------------------------------|
      |                                  |
      |  [Rust] keygen_start()           |
-     |  DH 密钥交换 + 链码协商            |
      |                                  |
-     |  POST /keygen/continue           |
+     |  RPC keygen_continue (R2)        |
      |--------------------------------->|
-     |  { serverPayload }               |
+     |  { WireEnvelope R2 }             |
      |<---------------------------------|
      |                                  |
-     |  [Rust] keygen_continue()        |
-     |  验证证明，组装 MasterKey2         |
-     |  派生 EVM 地址                    |
+     |  RPC keygen_continue (R3)        |
+     |--------------------------------->|
+     |  { WireEnvelope R3 }             |
+     |<---------------------------------|
+     |                                  |
+     |  RPC keygen_continue (R4 最终)    |
+     |--------------------------------->|
+     |  { status: completed }           |  -> Keyshare
+     |<---------------------------------|
      |                                  |
      v  KeygenResult                    v
 ```
 
-### 密钥恢复（4 轮内部，2 次请求往返）
+Recovery 和 Sign 遵循相同的 4 轮模式（start + 3 次 continue）。
 
-```
-客户端 (Party2)                      服务端 (Party1)
-     |                                  |
-     |  解密备份 -> MasterKey2           |
-     |                                  |
-     |  POST /recovery/start            |
-     |--------------------------------->|
-     |  { sessionId, serverPayload }    |
-     |<---------------------------------|
-     |                                  |
-     |  [Rust] recover_start()          |
-     |  Coin-flip 第一轮消息             |
-     |                                  |
-     |  POST /recovery/continue         |
-     |--------------------------------->|
-     |  { serverPayload }               |
-     |<---------------------------------|
-     |                                  |
-     |  [Rust] recover_continue()       |
-     |  完成 coin-flip，执行 rotation    |
-     |  -> 新 MasterKey2（地址不变）      |
-     |                                  |
-     v  RecoveryResult                  v
-```
+> **提示：** 使用 `WebSocketMpcTransport` 保持持久连接 — 避免每次往返的 TCP 握手开销。
 
 ## 密码学依赖
 
@@ -232,6 +199,9 @@ rust/
 # Dart 单元测试（mock Rust 层）
 flutter test
 
+# example app analyze + widget/transport tests
+cd example && flutter analyze && flutter test
+
 # Rust 单元测试（完整密码学协议）
 cd rust && cargo test
 ```
@@ -246,6 +216,7 @@ cd rust && cargo test
 - [x] 密钥导出（MPC → 普通钱包迁移）
 - [x] 密钥轮换（DKLs23 key refresh）
 - [x] DKLs23 迁移（sl-dkls23 v1.0.0-beta）
+- [x] WebSocket 传输（与 HTTP 并存）
 - [ ] 多链支持（EVM 以外）
 
 ## 安全

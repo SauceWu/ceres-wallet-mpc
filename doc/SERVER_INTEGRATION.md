@@ -19,15 +19,17 @@ Client (Party2 / ceres_mpc)          Server (Party1 / your backend)
 ```
 
 The server acts as **Party1** in the two-party ECDSA protocol. It must:
-1. Expose a single JSON-RPC 2.0 endpoint (e.g. `POST /rpc`)
+1. Expose a single JSON-RPC 2.0 endpoint (e.g. `POST /rpc`) — supports both HTTP and WebSocket
 2. Handle 7 methods: `keygen_start`, `keygen_continue`, `recovery_start`, `recovery_continue`, `sign_start`, `sign_continue`, `export_key`
-3. Run Party1-side DKLs23 protocol (sl-dkls23 or compatible)
-4. Store `serverKeyshare` (Keyshare) securely
-5. Manage ephemeral session state between protocol rounds
+3. Run Party1-side DKLs23 protocol (sl-dkls23 or compatible) — 4-round protocol
+4. Store `serverKeyshare` (Keyshare) securely — binary format, Base64-encoded
+5. Manage ephemeral session state between protocol rounds (4 rounds per operation)
 
 ## JSON-RPC 2.0 Protocol
 
-All communication uses JSON-RPC 2.0 over a single HTTP endpoint.
+All communication uses JSON-RPC 2.0 over a single HTTP endpoint or WebSocket connection.
+
+> **Transport options:** The client SDK supports both HTTP (`HttpMpcTransport`) and WebSocket (`WebSocketMpcTransport`). Your server should support at least HTTP (`POST /rpc`). For WebSocket, accept JSON-RPC messages on a WS endpoint (e.g. `ws://host/ws`) — the message format is identical.
 
 **Request format:**
 ```json
@@ -90,24 +92,28 @@ If your server uses a different language, implement a DKLs23-compatible protocol
   |                    |                      |  RPC keygen_start    |
   |                    |                      |--------------------->|
   |                    |                      |                      | DKG Round 1 (via Relay)
-  |                    |                      |  result:             | Store session
-  |                    |                      |  {sessionId,         |
-  |                    |                      |   serverPayload}     |
+  |                    |                      |  {sessionId,         | Store session
+  |                    |                      |   serverPayload:     |
+  |                    |                      |   WireEnvelope R1}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |                      | [Rust] keygen_start()
   |                    |                      |                      |
-  |                    |                      |  RPC keygen_continue |
-  |                    |                      |  {clientPayload}     |
+  |                    |                      |  RPC keygen_continue | ← Round 2
   |                    |                      |--------------------->|
-  |                    |                      |                      | DKG Rounds 2-4 (via Relay)
-  |                    |                      |                      | → Keyshare
-  |                    |                      |  result:             | Persist Keyshare
-  |                    |                      |  {serverPayload}     |
+  |                    |                      |  {WireEnvelope R2}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
-  |                    |                      | [Rust] keygen_continue()
-  |                    |                      | derive_evm_address()
+  |                    |                      |  RPC keygen_continue | ← Round 3
+  |                    |                      |--------------------->|
+  |                    |                      |  {WireEnvelope R3}   |
+  |                    |                      |<---------------------|
+  |                    |                      |                      |
+  |                    |                      |  RPC keygen_continue | ← Round 4 (final)
+  |                    |                      |--------------------->|
+  |                    |                      |                      | → Keyshare
+  |                    |                      |  {status: completed} | Persist Keyshare
+  |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |  KeygenResult         |                      |
   |                    |<---------------------|                      |
@@ -131,21 +137,19 @@ If your server uses a different language, implement a DKLs23-compatible protocol
   |                    |                      |  RPC recovery_start  |
   |                    |                      |--------------------->|
   |                    |                      |                      | Load Keyshare
-  |                    |                      |                      | key_refresh Round 1
-  |                    |                      |  result: {sessionId, |
-  |                    |                      |   serverPayload}     |
+  |                    |                      |  {sessionId,         | key_refresh Round 1
+  |                    |                      |   WireEnvelope R1}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |                      | [Rust] recover_start()
   |                    |                      |                      |
-  |                    |                      |  RPC recovery_continue
-  |                    |                      |--------------------->|
-  |                    |                      |                      | key_refresh Rounds 2-4
-  |                    |                      |  result:             | Persist new Keyshare
-  |                    |                      |  {serverPayload}     |
+  |                    |                      |  RPC recovery_continue| ← Rounds 2,3,4
+  |                    |                      |--------------------->|  (3 round-trips,
+  |                    |                      |  {WireEnvelope / ...}|   same as keygen)
   |                    |                      |<---------------------|
-  |                    |                      |                      |
-  |                    |                      | [Rust] recover_continue()
+  |                    |                      |                      | → new Keyshare
+  |                    |                      |  {status: completed} | Persist new Keyshare
+  |                    |                      |<---------------------|
   |                    |                      | Same address!        |
   |                    |                      |                      |
   |                    |  RecoveryResult       |                      |
@@ -166,16 +170,19 @@ If your server uses a different language, implement a DKLs23-compatible protocol
   |                    |                      |  RPC sign_start      |
   |                    |                      |--------------------->|
   |                    |                      |                      | Load Keyshare
-  |                    |                      |  result: {sessionId, | DSG Round 1
-  |                    |                      |   serverPayload}     |
+  |                    |                      |  {sessionId,         | DSG Round 1
+  |                    |                      |   WireEnvelope R1}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |                      | [Rust] sign_start()  |
   |                    |                      |                      |
-  |                    |                      |  RPC sign_continue   |
-  |                    |                      |--------------------->|
-  |                    |                      |                      | DSG Rounds 2-4
-  |                    |                      |  result: {r, s, recid}
+  |                    |                      |  RPC sign_continue   | ← Rounds 2,3,4
+  |                    |                      |--------------------->|  (3 round-trips,
+  |                    |                      |  {WireEnvelope / ...}|   same as keygen)
+  |                    |                      |<---------------------|
+  |                    |                      |                      |
+  |                    |                      |  {status: completed} | DSG complete
+  |                    |                      |  {r, s, recid}       |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |  SignResult           |                      |
@@ -199,56 +206,87 @@ If your server uses a different language, implement a DKLs23-compatible protocol
 **result:**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64-char-hex-session-id",
   "serverPayload": {
-    "kg_party_one_first_message": { ... },
-    "cc_party_one_first_message": { ... }
+    "session_id": "64-char-hex-session-id",
+    "protocol": "dkg",
+    "round": 1,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64-encoded DKLs23 round 1 message bytes>"
   }
 }
 ```
 
 **Server-side logic:**
 ```rust
-let setup = KeygenSetup::new(inst, sk, 1, vk_list, &[0, 0], 2);
-// Server runs as Party1 (party_id=1) in 2-of-2 DKLs23
+let inst = InstanceId::from(session_id_bytes);
+let vk = vec![NoVerifyingKey::new(0), NoVerifyingKey::new(1)];
+let setup = KeygenSetup::new(inst, NoSigningKey, 1, vk, &[0, 0], 2);
 // Spawn async keygen::dkg::run(setup, seed, relay)
-// First round message sent via Relay trait
+// Read first message from Relay, wrap in WireEnvelope, return
 ```
 
 ---
 
 ### 2. `keygen_continue`
 
+Called **3 times** (rounds 2, 3, 4) to complete the 4-round DKG protocol.
+
 **params:**
 ```json
 {
-  "sessionId": "uuid-string",
-  "round": 1,
+  "sessionId": "64-char-hex-session-id",
+  "round": 2,
   "clientPayload": {
-    "kg_party_two_first_message": { ... },
-    "cc_party_two_first_message": { ... }
+    "session_id": "64-char-hex-session-id",
+    "protocol": "dkg",
+    "round": 2,
+    "from_id": 0,
+    "to_id": 1,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64-encoded client round 2 message>"
   }
 }
 ```
 
-**result:**
+**result (rounds 2-3, intermediate):**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64-char-hex-session-id",
   "serverPayload": {
-    "kg_party_one_second_message": { ... },
-    "cc_party_one_second_message": { ... }
+    "session_id": "64-char-hex-session-id",
+    "protocol": "dkg",
+    "round": 3,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64-encoded server next round message>"
   }
+}
+```
+
+**result (round 4, final — protocol complete):**
+```json
+{
+  "status": "completed",
+  "mpcKeyId": "64-char-hex-session-id",
+  "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18",
+  "publicKey": "04abcdef...",
+  "curve": "secp256k1",
+  "threshold": 2,
+  "rotationVersion": 1
 }
 ```
 
 **Server-side logic:**
 ```rust
-// DKLs23 protocol rounds 2-4 handled via Relay
-// Each continue call advances the protocol state
-// Final round produces Keyshare
+// Inject client payload bytes into Relay channel
+// Read next server message from Relay
+// If Relay closes → protocol complete, extract Keyshare
 let keyshare_b64 = base64::encode(keyshare.as_slice());
-// Persist keyshare_b64
+// Persist keyshare_b64, return completed result
 ```
 
 ---
@@ -265,9 +303,15 @@ let keyshare_b64 = base64::encode(keyshare.as_slice());
 **result:**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64-char-hex-session-id",
   "serverPayload": {
-    "coin_flip_party1_first_message": { ... }
+    "session_id": "64-char-hex-session-id",
+    "protocol": "rotation",
+    "round": 1,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64-encoded key_refresh round 1 message>"
   }
 }
 ```
@@ -277,33 +321,33 @@ let keyshare_b64 = base64::encode(keyshare.as_slice());
 let keyshare = load_keyshare(mpc_key_id);
 let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
 // Spawn key_refresh::run(setup, seed, relay, kfr)
+// Read first message from Relay, wrap in WireEnvelope, return
 ```
 
 ---
 
 ### 4. `recovery_continue`
 
+Called **3 times** (rounds 2, 3, 4). Same WireEnvelope format as keygen_continue.
+
 **params:**
 ```json
 {
-  "sessionId": "uuid-string",
-  "round": 1,
+  "sessionId": "64-char-hex-session-id",
+  "round": 2,
   "clientPayload": {
-    "coin_flip_party2_first_message": { ... }
+    "session_id": "...",
+    "protocol": "rotation",
+    "round": 2,
+    "from_id": 0,
+    "to_id": 1,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64>"
   }
 }
 ```
 
-**result:**
-```json
-{
-  "sessionId": "uuid-string",
-  "serverPayload": {
-    "coin_flip_party1_second_message": { ... },
-    "rotation_party1_first_message": { ... }
-  }
-}
-```
+**result (intermediate):** WireEnvelope with next round. **result (final):** completed with new Keyshare metadata (same address, incremented rotationVersion).
 
 **Server-side logic:**
 ```rust
@@ -320,35 +364,61 @@ let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
 ```json
 {
   "mpcKeyId": "key-id",
-  "messageHash": "64-char-hex-hash"
+  "messageHash": "64-char-hex-hash (32 bytes, no 0x prefix)"
 }
 ```
 
 **result:**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64-char-hex-session-id",
   "serverPayload": {
-    "eph_key_gen_first_message_party_one": { ... },
-    "message_hash": "64-char-hex-hash"
+    "session_id": "64-char-hex-session-id",
+    "protocol": "dsg",
+    "round": 1,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64-encoded DSG round 1 message>"
   }
 }
+```
+
+**Server-side logic:**
+```rust
+let keyshare = load_keyshare(mpc_key_id);
+let setup = SignSetup::new(inst, NoSigningKey, 1, vk_list, Arc::new(keyshare))
+    .with_hash(message_hash_bytes)
+    .with_chain_path("m".parse()?);
+// Spawn sign::run(setup, seed, relay)
 ```
 
 ---
 
 ### 6. `sign_continue`
 
+Called **3 times** (rounds 2, 3, 4). Same WireEnvelope format with `protocol: "dsg"`.
+
 **params:**
 ```json
 {
-  "sessionId": "uuid-string",
-  "round": 1,
-  "clientPayload": "..."
+  "sessionId": "64-char-hex-session-id",
+  "round": 2,
+  "clientPayload": {
+    "session_id": "...",
+    "protocol": "dsg",
+    "round": 2,
+    "from_id": 0,
+    "to_id": 1,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64>"
+  }
 }
 ```
 
-**result:**
+**result (intermediate):** WireEnvelope with next round.
+
+**result (final, round 4):**
 ```json
 {
   "status": "completed",
@@ -358,16 +428,7 @@ let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
 }
 ```
 
-**Server-side logic (sign_start):**
-```rust
-let keyshare = load_keyshare(mpc_key_id);
-let setup = SignSetup::new(...)
-    .with_hash(message_hash_bytes)
-    .with_chain_path("m".parse()?);
-// Spawn sign::run(setup, seed, relay)
-```
-
-**Server-side logic (sign_continue):**
+**Server-side logic:**
 ```rust
 // DSG rounds 2-4 via Relay
 // Final round produces (Signature, RecoveryId)

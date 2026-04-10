@@ -19,15 +19,17 @@
 ```
 
 服务端扮演两方 ECDSA 协议中的 **Party1** 角色，需要：
-1. 暴露一个 JSON-RPC 2.0 端点（如 `POST /rpc`）
+1. 暴露一个 JSON-RPC 2.0 端点（如 `POST /rpc`）— 支持 HTTP 和 WebSocket
 2. 处理 7 个方法：`keygen_start`、`keygen_continue`、`recovery_start`、`recovery_continue`、`sign_start`、`sign_continue`、`export_key`
-3. 运行 Party1 侧的 DKLs23 协议（sl-dkls23 或兼容实现）
-4. 安全存储 `serverKeyshare`（Keyshare）
-5. 管理协议轮次之间的临时会话状态
+3. 运行 Party1 侧的 DKLs23 协议（sl-dkls23 或兼容实现）— 4 轮协议
+4. 安全存储 `serverKeyshare`（Keyshare）— 二进制格式，Base64 编码
+5. 管理协议轮次之间的临时会话状态（每次操作 4 轮）
 
 ## JSON-RPC 2.0 协议
 
-所有通信使用 JSON-RPC 2.0，通过单一 HTTP 端点。
+所有通信使用 JSON-RPC 2.0，通过单一 HTTP 端点或 WebSocket 连接。
+
+> **传输方式：** 客户端 SDK 同时支持 HTTP（`HttpMpcTransport`）和 WebSocket（`WebSocketMpcTransport`）。服务端至少需要支持 HTTP（`POST /rpc`）。如需 WebSocket，在 WS 端点（如 `ws://host/ws`）上接收 JSON-RPC 消息即可 — 消息格式完全一致。
 
 **请求格式：**
 ```json
@@ -89,25 +91,28 @@ k256 = { version = "0.13", features = ["ecdsa"] }
   |                    |--------------------->|                      |
   |                    |                      |  RPC keygen_start    |
   |                    |                      |--------------------->|
-  |                    |                      |                      | DKG Round 1 (via Relay)
-  |                    |                      |  result:             | 存储会话
-  |                    |                      |  {sessionId,         |
-  |                    |                      |   serverPayload}     |
+  |                    |                      |                      | DKG Round 1
+  |                    |                      |  {sessionId,         | 存储会话
+  |                    |                      |   WireEnvelope R1}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |                      | [Rust] keygen_start()
   |                    |                      |                      |
-  |                    |                      |  RPC keygen_continue |
-  |                    |                      |  {clientPayload}     |
+  |                    |                      |  RPC keygen_continue | ← 第 2 轮
   |                    |                      |--------------------->|
-  |                    |                      |                      | DKG Rounds 2-4 (via Relay)
-  |                    |                      |                      | → Keyshare
-  |                    |                      |  result:             | 持久化 Keyshare
-  |                    |                      |  {serverPayload}     |
+  |                    |                      |  {WireEnvelope R2}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
-  |                    |                      | [Rust] keygen_continue()
-  |                    |                      | derive_evm_address()
+  |                    |                      |  RPC keygen_continue | ← 第 3 轮
+  |                    |                      |--------------------->|
+  |                    |                      |  {WireEnvelope R3}   |
+  |                    |                      |<---------------------|
+  |                    |                      |                      |
+  |                    |                      |  RPC keygen_continue | ← 第 4 轮（最终）
+  |                    |                      |--------------------->|
+  |                    |                      |                      | → Keyshare
+  |                    |                      |  {status: completed} | 持久化 Keyshare
+  |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |  KeygenResult         |                      |
   |                    |<---------------------|                      |
@@ -131,21 +136,19 @@ k256 = { version = "0.13", features = ["ecdsa"] }
   |                    |                      |  RPC recovery_start  |
   |                    |                      |--------------------->|
   |                    |                      |                      | 加载 Keyshare
-  |                    |                      |                      | key_refresh Round 1
-  |                    |                      |  result: {sessionId, |
-  |                    |                      |   serverPayload}     |
+  |                    |                      |  {sessionId,         | key_refresh 第 1 轮
+  |                    |                      |   WireEnvelope R1}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |                      | [Rust] recover_start()
   |                    |                      |                      |
-  |                    |                      |  RPC recovery_continue
-  |                    |                      |--------------------->|
-  |                    |                      |                      | key_refresh Rounds 2-4
-  |                    |                      |  result:             | 持久化新 Keyshare
-  |                    |                      |  {serverPayload}     |
+  |                    |                      |  RPC recovery_continue| ← 第 2,3,4 轮
+  |                    |                      |--------------------->|  （3 次往返，
+  |                    |                      |  {WireEnvelope / ...}|   同 keygen）
   |                    |                      |<---------------------|
-  |                    |                      |                      |
-  |                    |                      | [Rust] recover_continue()
+  |                    |                      |                      | → 新 Keyshare
+  |                    |                      |  {status: completed} | 持久化新 Keyshare
+  |                    |                      |<---------------------|
   |                    |                      | 地址不变！             |
   |                    |                      |                      |
   |                    |  RecoveryResult       |                      |
@@ -166,16 +169,19 @@ k256 = { version = "0.13", features = ["ecdsa"] }
   |                    |                      |  RPC sign_start      |
   |                    |                      |--------------------->|
   |                    |                      |                      | 加载 Keyshare
-  |                    |                      |  result: {sessionId, | DSG Round 1
-  |                    |                      |   serverPayload}     |
+  |                    |                      |  {sessionId,         | DSG 第 1 轮
+  |                    |                      |   WireEnvelope R1}   |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |                      | [Rust] sign_start()  |
   |                    |                      |                      |
-  |                    |                      |  RPC sign_continue   |
-  |                    |                      |--------------------->|
-  |                    |                      |                      | DSG Rounds 2-4
-  |                    |                      |  result: {r, s, recid}
+  |                    |                      |  RPC sign_continue   | ← 第 2,3,4 轮
+  |                    |                      |--------------------->|  （3 次往返，
+  |                    |                      |  {WireEnvelope / ...}|   同 keygen）
+  |                    |                      |<---------------------|
+  |                    |                      |                      |
+  |                    |                      |  {status: completed} | DSG 完成
+  |                    |                      |  {r, s, recid}       |
   |                    |                      |<---------------------|
   |                    |                      |                      |
   |                    |  SignResult           |                      |
@@ -199,56 +205,87 @@ k256 = { version = "0.13", features = ["ecdsa"] }
 **result：**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64位hex会话ID",
   "serverPayload": {
-    "kg_party_one_first_message": { ... },
-    "cc_party_one_first_message": { ... }
+    "session_id": "64位hex会话ID",
+    "protocol": "dkg",
+    "round": 1,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64编码的DKLs23第1轮消息字节>"
   }
 }
 ```
 
 **服务端逻辑：**
 ```rust
-let setup = KeygenSetup::new(inst, sk, 1, vk_list, &[0, 0], 2);
-// 服务端作为 Party1 (party_id=1) 运行 2-of-2 DKLs23
+let inst = InstanceId::from(session_id_bytes);
+let vk = vec![NoVerifyingKey::new(0), NoVerifyingKey::new(1)];
+let setup = KeygenSetup::new(inst, NoSigningKey, 1, vk, &[0, 0], 2);
 // 异步启动 keygen::dkg::run(setup, seed, relay)
-// 第一轮消息通过 Relay trait 发送
+// 从 Relay 读取第一条消息，封装为 WireEnvelope 返回
 ```
 
 ---
 
 ### 2. `keygen_continue`
 
+调用 **3 次**（第 2、3、4 轮）以完成 4 轮 DKG 协议。
+
 **params：**
 ```json
 {
-  "sessionId": "uuid-string",
-  "round": 1,
+  "sessionId": "64位hex会话ID",
+  "round": 2,
   "clientPayload": {
-    "kg_party_two_first_message": { ... },
-    "cc_party_two_first_message": { ... }
+    "session_id": "64位hex会话ID",
+    "protocol": "dkg",
+    "round": 2,
+    "from_id": 0,
+    "to_id": 1,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64编码的客户端第2轮消息>"
   }
 }
 ```
 
-**result：**
+**result（第 2-3 轮，中间轮次）：**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64位hex会话ID",
   "serverPayload": {
-    "kg_party_one_second_message": { ... },
-    "cc_party_one_second_message": { ... }
+    "session_id": "...",
+    "protocol": "dkg",
+    "round": 3,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64编码的服务端下一轮消息>"
   }
+}
+```
+
+**result（第 4 轮，最终 — 协议完成）：**
+```json
+{
+  "status": "completed",
+  "mpcKeyId": "64位hex会话ID",
+  "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18",
+  "publicKey": "04abcdef...",
+  "curve": "secp256k1",
+  "threshold": 2,
+  "rotationVersion": 1
 }
 ```
 
 **服务端逻辑：**
 ```rust
-// DKLs23 协议第 2-4 轮通过 Relay 处理
-// 每次 continue 调用推进协议状态
-// 最终轮产出 Keyshare
+// 将客户端 payload 字节注入 Relay 通道
+// 从 Relay 读取下一条服务端消息
+// 若 Relay 关闭 → 协议完成，提取 Keyshare
 let keyshare_b64 = base64::encode(keyshare.as_slice());
-// 持久化 keyshare_b64
+// 持久化 keyshare_b64，返回 completed 结果
 ```
 
 ---
@@ -265,9 +302,15 @@ let keyshare_b64 = base64::encode(keyshare.as_slice());
 **result：**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64位hex会话ID",
   "serverPayload": {
-    "coin_flip_party1_first_message": { ... }
+    "session_id": "64位hex会话ID",
+    "protocol": "rotation",
+    "round": 1,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64编码的key_refresh第1轮消息>"
   }
 }
 ```
@@ -277,33 +320,33 @@ let keyshare_b64 = base64::encode(keyshare.as_slice());
 let keyshare = load_keyshare(mpc_key_id);
 let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
 // 异步启动 key_refresh::run(setup, seed, relay, kfr)
+// 从 Relay 读取第一条消息，封装为 WireEnvelope 返回
 ```
 
 ---
 
 ### 4. `recovery_continue`
 
+调用 **3 次**（第 2、3、4 轮）。WireEnvelope 格式与 keygen_continue 相同，`protocol` 为 `"rotation"`。
+
 **params：**
 ```json
 {
-  "sessionId": "uuid-string",
-  "round": 1,
+  "sessionId": "64位hex会话ID",
+  "round": 2,
   "clientPayload": {
-    "coin_flip_party2_first_message": { ... }
+    "session_id": "...",
+    "protocol": "rotation",
+    "round": 2,
+    "from_id": 0,
+    "to_id": 1,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64>"
   }
 }
 ```
 
-**result：**
-```json
-{
-  "sessionId": "uuid-string",
-  "serverPayload": {
-    "coin_flip_party1_second_message": { ... },
-    "rotation_party1_first_message": { ... }
-  }
-}
-```
+**result（中间轮次）：** 返回下一轮 WireEnvelope。**result（最终轮）：** completed，包含新 Keyshare 元数据（地址不变，rotationVersion 递增）。
 
 **服务端逻辑：**
 ```rust
@@ -320,35 +363,61 @@ let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
 ```json
 {
   "mpcKeyId": "key-id",
-  "messageHash": "64位十六进制哈希"
+  "messageHash": "64位十六进制哈希（32字节，无0x前缀）"
 }
 ```
 
 **result：**
 ```json
 {
-  "sessionId": "uuid-string",
+  "sessionId": "64位hex会话ID",
   "serverPayload": {
-    "eph_key_gen_first_message_party_one": { ... },
-    "message_hash": "64位十六进制哈希"
+    "session_id": "64位hex会话ID",
+    "protocol": "dsg",
+    "round": 1,
+    "from_id": 1,
+    "to_id": 0,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64编码的DSG第1轮消息>"
   }
 }
+```
+
+**服务端逻辑：**
+```rust
+let keyshare = load_keyshare(mpc_key_id);
+let setup = SignSetup::new(inst, NoSigningKey, 1, vk_list, Arc::new(keyshare))
+    .with_hash(message_hash_bytes)
+    .with_chain_path("m".parse()?);
+// 异步启动 sign::run(setup, seed, relay)
 ```
 
 ---
 
 ### 6. `sign_continue`
 
+调用 **3 次**（第 2、3、4 轮）。WireEnvelope 格式与 keygen_continue 相同，`protocol` 为 `"dsg"`。
+
 **params：**
 ```json
 {
-  "sessionId": "uuid-string",
-  "round": 1,
-  "clientPayload": "..."
+  "sessionId": "64位hex会话ID",
+  "round": 2,
+  "clientPayload": {
+    "session_id": "...",
+    "protocol": "dsg",
+    "round": 2,
+    "from_id": 0,
+    "to_id": 1,
+    "payload_encoding": "cbor_base64",
+    "payload": "<Base64>"
+  }
 }
 ```
 
-**result：**
+**result（中间轮次）：** 返回下一轮 WireEnvelope。
+
+**result（第 4 轮，最终）：**
 ```json
 {
   "status": "completed",
@@ -358,16 +427,7 @@ let kfr = KeyshareForRefresh::from_keyshare(&keyshare, None);
 }
 ```
 
-**服务端逻辑（sign_start）：**
-```rust
-let keyshare = load_keyshare(mpc_key_id);
-let setup = SignSetup::new(...)
-    .with_hash(message_hash_bytes)
-    .with_chain_path("m".parse()?);
-// 异步启动 sign::run(setup, seed, relay)
-```
-
-**服务端逻辑（sign_continue）：**
+**服务端逻辑：**
 ```rust
 // DSG 第 2-4 轮通过 Relay 处理
 // 最终轮产出 (Signature, RecoveryId)

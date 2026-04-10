@@ -15,6 +15,7 @@ Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) (DKLs23 pro
 - **Key Export** -- Export MPC wallet to standard wallet by reconstructing full private key
 - **EVM Address Derivation** -- EIP-55 checksummed address from group public key
 - **Transport Agnostic** -- Host app injects its own network layer via `MpcTransport`
+- **WebSocket Transport Example** -- Example app includes both HTTP and WebSocket transport reference implementations
 
 > **Server-side implementation?** See [Server Integration Guide](doc/SERVER_INTEGRATION.md)
 
@@ -65,6 +66,7 @@ dependencies:
   ceres_mpc:
     git:
       url: https://github.com/SauceWu/ceres-mpc.git
+  web_socket_channel: ^3.0.3 # only needed when using WebSocketMpcTransport
 ```
 
 ### Usage
@@ -75,48 +77,31 @@ import 'package:ceres_mpc/ceres_mpc.dart';
 // 1. Implement transport (your server communication layer)
 class MyTransport implements MpcTransport {
   @override
-  Future<String> send(String endpoint, String payload) async {
-    // POST to your MPC server, return response body
+  Future<String> send(String payload) async {
+    // POST or forward the JSON-RPC payload to your MPC server, return raw response
   }
 }
-
-// 2. Initialize client
-final client = MpcClient(
-  engine: MpcEngine(RustLib.instance.api),
-  transport: MyTransport(),
-);
-
-// 3. Keygen
-final keygenResult = await client.keygen();
-print(keygenResult.address);    // 0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18
-print(keygenResult.publicKey);  // hex-encoded uncompressed pubkey
-// Store keygenResult.localEncryptedShare securely on device
-
-// 4. Sign a transaction
-final signResult = await client.sign(
-  mpcKeyId: keygenResult.mpcKeyId,
-  messageHash: keccak256HashHex,  // 32-byte hex, no 0x prefix
-  localEncryptedShare: keygenResult.localEncryptedShare,
-);
-// signResult.r, signResult.s, signResult.recid -> assemble signed tx
-
-// 5. Recovery (from backup)
-final recoveryResult = await client.recover(
-  mpcKeyId: keygenResult.mpcKeyId,
-  encryptedBackupShare: backupEnvelope,
-  userBackupSecret: userSecret,
-  currentRotationVersion: keygenResult.rotationVersion,
-);
-// recoveryResult.address == keygenResult.address (preserved)
-
-// 6. Export to standard wallet (migrate away from MPC)
-final exportResult = await client.exportPrivateKey(
-  mpcKeyId: keygenResult.mpcKeyId,
-  localEncryptedShare: keygenResult.localEncryptedShare,
-);
-// exportResult.privateKey -> import into MetaMask/Trust Wallet
-// WARNING: MPC key is compromised after export, disable MPC operations
 ```
+
+See the runnable app in [`example/README.md`](example/README.md) for end-to-end setup, including transport switching.
+
+### WebSocket Transport
+
+The example app ships a reference `WebSocketMpcTransport` that implements `MpcTransport` and can be swapped in without changing the MPC client flow.
+
+```dart
+final transport = WebSocketMpcTransport(
+  wsUrl: 'ws://your-mpc-server.com/ws',
+  timeout: const Duration(seconds: 30),
+);
+```
+
+Behavior:
+
+- Lazily connects on the first `send()`
+- Matches concurrent responses by JSON-RPC `id`
+- Automatically reconnects on the next request after disconnect
+- Throws `WsTransportTimeoutException` on connect/response timeout
 
 ## Project Structure
 
@@ -145,58 +130,39 @@ rust/
 
 ## Protocol Flow
 
-### Keygen (4 rounds internally, 2 round-trips)
+### Keygen (4-round DKLs23, 4 HTTP round-trips)
 
 ```
 Client (Party2)                    Server (Party1)
      |                                  |
-     |  POST /keygen/start              |
+     |  RPC keygen_start                |
      |--------------------------------->|
-     |  { sessionId, serverPayload }    |
+     |  { sessionId, WireEnvelope R1 }  |  DKG Round 1
      |<---------------------------------|
      |                                  |
      |  [Rust] keygen_start()           |
-     |  DH key exchange + chain code    |
      |                                  |
-     |  POST /keygen/continue           |
+     |  RPC keygen_continue (R2)        |
      |--------------------------------->|
-     |  { serverPayload }               |
+     |  { WireEnvelope R2 }             |
      |<---------------------------------|
      |                                  |
-     |  [Rust] keygen_continue()        |
-     |  Verify proofs, assemble         |
-     |  MasterKey2 + derive address     |
+     |  RPC keygen_continue (R3)        |
+     |--------------------------------->|
+     |  { WireEnvelope R3 }             |
+     |<---------------------------------|
+     |                                  |
+     |  RPC keygen_continue (R4 final)  |
+     |--------------------------------->|
+     |  { status: completed }           |  -> Keyshare
+     |<---------------------------------|
      |                                  |
      v  KeygenResult                    v
 ```
 
-### Recovery (4 rounds internally, 2 round-trips)
+Recovery and Sign follow the same 4-round pattern (start + 3 continues).
 
-```
-Client (Party2)                    Server (Party1)
-     |                                  |
-     |  Decrypt backup -> MasterKey2    |
-     |                                  |
-     |  POST /recovery/start            |
-     |--------------------------------->|
-     |  { sessionId, serverPayload }    |
-     |<---------------------------------|
-     |                                  |
-     |  [Rust] recover_start()          |
-     |  Coin-flip first message         |
-     |                                  |
-     |  POST /recovery/continue         |
-     |--------------------------------->|
-     |  { serverPayload }               |
-     |<---------------------------------|
-     |                                  |
-     |  [Rust] recover_continue()       |
-     |  Complete coin-flip, apply       |
-     |  rotation -> new MasterKey2      |
-     |  (same address preserved)        |
-     |                                  |
-     v  RecoveryResult                  v
-```
+> **Tip:** Use `WebSocketMpcTransport` to keep a persistent connection — avoids TCP handshake overhead on each round-trip.
 
 ## Cryptographic Dependencies
 
@@ -214,6 +180,9 @@ Client (Party2)                    Server (Party1)
 # Dart unit tests (mocking Rust layer)
 flutter test
 
+# Example app analyzer + widget/transport tests
+cd example && flutter analyze && flutter test
+
 # Rust unit tests (full cryptographic protocol)
 cd rust && cargo test
 ```
@@ -228,6 +197,7 @@ cd rust && cargo test
 - [x] Key export (MPC → standard wallet migration)
 - [x] Key rotation (DKLs23 key refresh)
 - [x] DKLs23 migration (sl-dkls23 v1.0.0-beta)
+- [x] WebSocket transport (alongside HTTP)
 - [ ] Multi-chain support (beyond EVM)
 
 ## Security
