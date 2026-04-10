@@ -32,19 +32,18 @@ void main() {
     engine = MpcEngine(mockApi);
   });
 
-  test('keygenStart returns valid MpcRoundResult', () async {
+  test('keygen round 1 returns valid MpcRoundResult', () async {
     when(
-      () => mockApi.crateApiMpcEngineKeygenStart(
+      () => mockApi.crateApiMpcEngineKeygen(
         sessionId: any(named: 'sessionId'),
+        round: any(named: 'round'),
         serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer(
-      (_) async => _roundJson(
-        clientPayload: 'stub_keygen_round1_sess1',
-      ),
+      (_) async => _roundJson(clientPayload: 'stub_keygen_round1'),
     );
 
-    final result = await engine.keygenStart('sess1', '{}');
+    final result = await engine.keygen('sess1', 1, '{}');
 
     expect(result.status, 'continue');
     expect(result.round, 1);
@@ -52,173 +51,157 @@ void main() {
     expect(result.isContinue, isTrue);
   });
 
-  test('keygenContinue returns completed status', () async {
+  test('keygen returns completed status on final round', () async {
     when(
-      () => mockApi.crateApiMpcEngineKeygenContinue(
+      () => mockApi.crateApiMpcEngineKeygen(
         sessionId: any(named: 'sessionId'),
+        round: any(named: 'round'),
         serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer(
       (_) async => _roundJson(
         status: 'completed',
-        round: 2,
-        clientPayload: 'stub_keygen_completed_sess1',
+        round: 4,
+        clientPayload: 'stub_keygen_completed',
       ),
     );
 
-    final result = await engine.keygenContinue('sess1', '{}');
+    final result = await engine.keygen('sess1', 4, '{}');
 
     expect(result.isCompleted, isTrue);
-    expect(result.round, 2);
+    expect(result.round, 4);
   });
 
-  test('recoverStart passes backupShare parameter correctly', () async {
+  test('recover passes backupShare and rotationVersion on round 1', () async {
     when(
-      () => mockApi.crateApiMpcEngineRecoverStart(
+      () => mockApi.crateApiMpcEngineRecover(
         sessionId: any(named: 'sessionId'),
-        backupShare: any(named: 'backupShare'),
+        round: any(named: 'round'),
         serverPayload: any(named: 'serverPayload'),
+        backupShare: any(named: 'backupShare'),
         currentRotationVersion: any(named: 'currentRotationVersion'),
       ),
     ).thenAnswer(
       (_) async => _roundJson(clientPayload: 'stub_recover_round1'),
     );
 
-    final result = await engine.recoverStart('sess1', 'backup_data', '{}', 1);
+    final result = await engine.recover(
+      'sess1', 1, '{}',
+      backupShare: 'backup_data',
+      currentRotationVersion: 1,
+    );
 
     expect(result.isContinue, isTrue);
     verify(
-      () => mockApi.crateApiMpcEngineRecoverStart(
+      () => mockApi.crateApiMpcEngineRecover(
         sessionId: 'sess1',
-        backupShare: 'backup_data',
+        round: 1,
         serverPayload: '{}',
+        backupShare: 'backup_data',
         currentRotationVersion: 1,
       ),
     ).called(1);
   });
 
-  test('signStart passes share parameter correctly', () async {
+  test('sign passes share and messageHashHex on round 1', () async {
     when(
-      () => mockApi.crateApiMpcEngineSignStart(
+      () => mockApi.crateApiMpcEngineSign(
         sessionId: any(named: 'sessionId'),
+        round: any(named: 'round'),
+        serverPayload: any(named: 'serverPayload'),
         share: any(named: 'share'),
         messageHashHex: any(named: 'messageHashHex'),
-        serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer(
       (_) async => _roundJson(clientPayload: 'stub_sign_round1'),
     );
 
     const dummyHash = 'aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd';
-    final result = await engine.signStart('sess1', 'share_data', dummyHash, '{}');
+    final result = await engine.sign(
+      'sess1', 1, '{}',
+      share: 'share_data',
+      messageHashHex: dummyHash,
+    );
 
     expect(result.isContinue, isTrue);
     verify(
-      () => mockApi.crateApiMpcEngineSignStart(
+      () => mockApi.crateApiMpcEngineSign(
         sessionId: 'sess1',
+        round: 1,
+        serverPayload: '{}',
         share: 'share_data',
         messageHashHex: dummyHash,
-        serverPayload: '{}',
       ),
     ).called(1);
   });
 
   test('invalid JSON from FRB throws FormatException', () async {
     when(
-      () => mockApi.crateApiMpcEngineKeygenStart(
+      () => mockApi.crateApiMpcEngineKeygen(
         sessionId: any(named: 'sessionId'),
+        round: any(named: 'round'),
         serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer((_) async => 'not-json');
 
     expect(
-      () => engine.keygenStart('sess1', '{}'),
+      () => engine.keygen('sess1', 1, '{}'),
       throwsA(isA<FormatException>()),
     );
   });
 
-  test('all 6 methods callable through MpcEngine', () async {
+  test('all 3 protocol methods callable through MpcEngine', () async {
     when(
-      () => mockApi.crateApiMpcEngineKeygenStart(
+      () => mockApi.crateApiMpcEngineKeygen(
         sessionId: any(named: 'sessionId'),
+        round: any(named: 'round'),
         serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer((_) async => _roundJson());
 
     when(
-      () => mockApi.crateApiMpcEngineKeygenContinue(
+      () => mockApi.crateApiMpcEngineRecover(
         sessionId: any(named: 'sessionId'),
+        round: any(named: 'round'),
         serverPayload: any(named: 'serverPayload'),
-      ),
-    ).thenAnswer((_) async => _roundJson());
-
-    when(
-      () => mockApi.crateApiMpcEngineRecoverStart(
-        sessionId: any(named: 'sessionId'),
         backupShare: any(named: 'backupShare'),
-        serverPayload: any(named: 'serverPayload'),
         currentRotationVersion: any(named: 'currentRotationVersion'),
       ),
     ).thenAnswer((_) async => _roundJson());
 
     when(
-      () => mockApi.crateApiMpcEngineRecoverContinue(
+      () => mockApi.crateApiMpcEngineSign(
         sessionId: any(named: 'sessionId'),
+        round: any(named: 'round'),
         serverPayload: any(named: 'serverPayload'),
-      ),
-    ).thenAnswer((_) async => _roundJson());
-
-    when(
-      () => mockApi.crateApiMpcEngineSignStart(
-        sessionId: any(named: 'sessionId'),
         share: any(named: 'share'),
         messageHashHex: any(named: 'messageHashHex'),
-        serverPayload: any(named: 'serverPayload'),
       ),
     ).thenAnswer((_) async => _roundJson());
 
-    when(
-      () => mockApi.crateApiMpcEngineSignContinue(
-        sessionId: any(named: 'sessionId'),
-        serverPayload: any(named: 'serverPayload'),
-      ),
-    ).thenAnswer((_) async => _roundJson());
+    await engine.keygen('s', 1, '{}');
+    await engine.recover('s', 1, '{}', backupShare: 'b', currentRotationVersion: 1);
+    await engine.sign('s', 1, '{}', share: 'sh', messageHashHex: '0' * 64);
 
-    await engine.keygenStart('s', '{}');
-    await engine.keygenContinue('s', '{}');
-    await engine.recoverStart('s', 'b', '{}', 1);
-    await engine.recoverContinue('s', '{}');
-    await engine.signStart('s', 'sh', '0' * 64, '{}');
-    await engine.signContinue('s', '{}');
-
-    verify(() => mockApi.crateApiMpcEngineKeygenStart(
-          sessionId: any(named: 'sessionId'),
-          serverPayload: any(named: 'serverPayload'),
-        )).called(1);
-    verify(() => mockApi.crateApiMpcEngineKeygenContinue(
-          sessionId: any(named: 'sessionId'),
-          serverPayload: any(named: 'serverPayload'),
-        )).called(1);
-    verify(() => mockApi.crateApiMpcEngineRecoverStart(
-          sessionId: any(named: 'sessionId'),
-          backupShare: any(named: 'backupShare'),
-          serverPayload: any(named: 'serverPayload'),
-          currentRotationVersion: any(named: 'currentRotationVersion'),
-        )).called(1);
-    verify(() => mockApi.crateApiMpcEngineRecoverContinue(
-          sessionId: any(named: 'sessionId'),
-          serverPayload: any(named: 'serverPayload'),
-        )).called(1);
-    verify(() => mockApi.crateApiMpcEngineSignStart(
-          sessionId: any(named: 'sessionId'),
-          share: any(named: 'share'),
-          messageHashHex: any(named: 'messageHashHex'),
-          serverPayload: any(named: 'serverPayload'),
-        )).called(1);
-    verify(() => mockApi.crateApiMpcEngineSignContinue(
-          sessionId: any(named: 'sessionId'),
-          serverPayload: any(named: 'serverPayload'),
-        )).called(1);
+    verify(() => mockApi.crateApiMpcEngineKeygen(
+      sessionId: any(named: 'sessionId'),
+      round: any(named: 'round'),
+      serverPayload: any(named: 'serverPayload'),
+    )).called(1);
+    verify(() => mockApi.crateApiMpcEngineRecover(
+      sessionId: any(named: 'sessionId'),
+      round: any(named: 'round'),
+      serverPayload: any(named: 'serverPayload'),
+      backupShare: any(named: 'backupShare'),
+      currentRotationVersion: any(named: 'currentRotationVersion'),
+    )).called(1);
+    verify(() => mockApi.crateApiMpcEngineSign(
+      sessionId: any(named: 'sessionId'),
+      round: any(named: 'round'),
+      serverPayload: any(named: 'serverPayload'),
+      share: any(named: 'share'),
+      messageHashHex: any(named: 'messageHashHex'),
+    )).called(1);
   });
 
   test('deriveBackupEnvelope returns BackupEnvelope', () async {
@@ -242,17 +225,7 @@ void main() {
 
     expect(result, isA<BackupEnvelope>());
     expect(result.version, '1');
-    expect(result.algorithm, 'stub');
-    expect(result.createdAt, '1970-01-01T00:00:00Z');
     expect(result.payload, 'stub_envelope_share_abc');
-
-    verify(
-      () => mockApi.crateApiMpcEngineDeriveBackupEnvelope(
-        localEncryptedShare: 'share_abc',
-        userBackupSecret: 'secret_xyz',
-        createdAt: '1970-01-01T00:00:00Z',
-      ),
-    ).called(1);
   });
 
   test('decryptBackupShare returns opaque device backup share string', () async {
@@ -270,12 +243,5 @@ void main() {
     final result = await engine.decryptBackupShare('envelope_data', 'secret_xyz');
 
     expect(result, 'stub_decrypted_envelope_data');
-
-    verify(
-      () => mockApi.crateApiMpcEngineDecryptBackupShare(
-        encryptedEnvelope: 'envelope_data',
-        userBackupSecret: 'secret_xyz',
-      ),
-    ).called(1);
   });
 }

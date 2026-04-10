@@ -2,10 +2,12 @@
 ///
 /// Use with [MockMpcTransport] to run the example app without a real server
 /// or Rust crypto backend. Returns fake round results that drive the
-/// MpcClient's start/continue loop to completion.
+/// MpcClient's round loop to completion.
 ///
 /// For real usage, use [MpcEngine] with [RustLib.instance.api].
 library;
+
+// ignore_for_file: implementation_imports
 
 import 'dart:convert';
 import 'dart:math';
@@ -14,9 +16,9 @@ import 'package:ceres_mpc/src/dto/mpc_dtos.dart';
 
 /// Simulates MpcEngine protocol rounds without calling Rust FFI.
 ///
-/// Each protocol (keygen/sign/recover) tracks rounds per session.
+/// Uses the merged 3-function API: keygen(round), sign(round), recover(round).
 /// Returns `status: "continue"` for intermediate rounds and
-/// `status: "completed"` on the final round, matching real engine behavior.
+/// `status: "completed"` on the final round.
 class MockMpcEngine implements MpcEngine {
   final _sessionRounds = <String, int>{};
   final _rand = Random(42);
@@ -26,7 +28,6 @@ class MockMpcEngine implements MpcEngine {
     return List.generate(length, (_) => chars[_rand.nextInt(16)]).join();
   }
 
-  /// Build a fake WireEnvelope JSON string (client → server direction).
   String _mockClientPayload(String sessionId, String protocol, int round) {
     final mockBytes = List.generate(64, (_) => _rand.nextInt(256));
     return jsonEncode({
@@ -40,157 +41,94 @@ class MockMpcEngine implements MpcEngine {
     });
   }
 
-  // ── Keygen ──────────────────────────────────────────────────────
-
-  @override
-  Future<MpcRoundResult> keygenStart(
+  MpcRoundResult _roundOrComplete(
     String sessionId,
-    String serverPayload,
-  ) async {
-    _sessionRounds[sessionId] = 1;
-    return MpcRoundResult(
-      status: 'continue',
-      round: 1,
-      clientPayload: _mockClientPayload(sessionId, 'dkg', 1),
-    );
-  }
-
-  @override
-  Future<MpcRoundResult> keygenContinue(
-    String sessionId,
-    String serverPayload,
-  ) async {
-    final round = (_sessionRounds[sessionId] ?? 1) + 1;
+    String protocol,
+    int round,
+    Map<String, dynamic> Function() completedPayload,
+  ) {
     _sessionRounds[sessionId] = round;
-
     if (round < 4) {
       return MpcRoundResult(
         status: 'continue',
         round: round,
-        clientPayload: _mockClientPayload(sessionId, 'dkg', round),
+        clientPayload: _mockClientPayload(sessionId, protocol, round),
       );
     }
-
-    // Final round: completed
     _sessionRounds.remove(sessionId);
-    final mockKeyId = 'mpc_${_mockHex(8)}';
     return MpcRoundResult(
       status: 'completed',
       round: round,
-      clientPayload: jsonEncode({
-        'mpc_key_id': mockKeyId,
-        'address': '0x${_mockHex(40)}',
-        'public_key': '04${_mockHex(128)}',
-        'curve': 'secp256k1',
-        'threshold': 2,
-        'key_ref': mockKeyId,
-        'backup_state': 'pending',
-        'rotation_version': 1,
-        'local_encrypted_share':
-            base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
-      }),
+      clientPayload: jsonEncode(completedPayload()),
     );
+  }
+
+  // ── Keygen ──────────────────────────────────────────────────────
+
+  @override
+  Future<MpcRoundResult> keygen(
+    String sessionId,
+    int round,
+    String serverPayload,
+  ) async {
+    final mockKeyId = 'mpc_${_mockHex(8)}';
+    return _roundOrComplete(sessionId, 'dkg', round, () => {
+      'mpc_key_id': mockKeyId,
+      'address': '0x${_mockHex(40)}',
+      'public_key': '04${_mockHex(128)}',
+      'curve': 'secp256k1',
+      'threshold': 2,
+      'key_ref': mockKeyId,
+      'backup_state': 'pending',
+      'rotation_version': 1,
+      'local_encrypted_share':
+          base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
+    });
   }
 
   // ── Recovery ────────────────────────────────────────────────────
 
   @override
-  Future<MpcRoundResult> recoverStart(
+  Future<MpcRoundResult> recover(
     String sessionId,
-    String backupShare,
-    String serverPayload,
-    int currentRotationVersion,
-  ) async {
-    _sessionRounds[sessionId] = 1;
-    return MpcRoundResult(
-      status: 'continue',
-      round: 1,
-      clientPayload: _mockClientPayload(sessionId, 'rotation', 1),
-    );
-  }
-
-  @override
-  Future<MpcRoundResult> recoverContinue(
-    String sessionId,
-    String serverPayload,
-  ) async {
-    final round = (_sessionRounds[sessionId] ?? 1) + 1;
-    _sessionRounds[sessionId] = round;
-
-    if (round < 4) {
-      return MpcRoundResult(
-        status: 'continue',
-        round: round,
-        clientPayload: _mockClientPayload(sessionId, 'rotation', round),
-      );
-    }
-
-    _sessionRounds.remove(sessionId);
-    return MpcRoundResult(
-      status: 'completed',
-      round: round,
-      clientPayload: jsonEncode({
-        'mpc_key_id': sessionId,
-        'address': '0x${_mockHex(40)}',
-        'public_key': '04${_mockHex(128)}',
-        'curve': 'secp256k1',
-        'threshold': 2,
-        'key_ref': sessionId,
-        'backup_state': 'pending',
-        'rotation_version': 2,
-        'local_encrypted_share':
-            base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
-        'encrypted_backup_share': null,
-      }),
-    );
+    int round,
+    String serverPayload, {
+    String? backupShare,
+    int? currentRotationVersion,
+  }) async {
+    return _roundOrComplete(sessionId, 'rotation', round, () => {
+      'mpc_key_id': sessionId,
+      'address': '0x${_mockHex(40)}',
+      'public_key': '04${_mockHex(128)}',
+      'curve': 'secp256k1',
+      'threshold': 2,
+      'key_ref': sessionId,
+      'backup_state': 'pending',
+      'rotation_version': (currentRotationVersion ?? 1) + 1,
+      'local_encrypted_share':
+          base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
+      'encrypted_backup_share': null,
+    });
   }
 
   // ── Sign ────────────────────────────────────────────────────────
 
   @override
-  Future<MpcRoundResult> signStart(
+  Future<MpcRoundResult> sign(
     String sessionId,
-    String share,
-    String messageHashHex,
-    String serverPayload,
-  ) async {
-    _sessionRounds[sessionId] = 1;
-    return MpcRoundResult(
-      status: 'continue',
-      round: 1,
-      clientPayload: _mockClientPayload(sessionId, 'dsg', 1),
-    );
+    int round,
+    String serverPayload, {
+    String? share,
+    String? messageHashHex,
+  }) async {
+    return _roundOrComplete(sessionId, 'dsg', round, () => {
+      'r': _mockHex(64),
+      's': _mockHex(64),
+      'recid': _rand.nextInt(2),
+    });
   }
 
-  @override
-  Future<MpcRoundResult> signContinue(
-    String sessionId,
-    String serverPayload,
-  ) async {
-    final round = (_sessionRounds[sessionId] ?? 1) + 1;
-    _sessionRounds[sessionId] = round;
-
-    if (round < 4) {
-      return MpcRoundResult(
-        status: 'continue',
-        round: round,
-        clientPayload: _mockClientPayload(sessionId, 'dsg', round),
-      );
-    }
-
-    _sessionRounds.remove(sessionId);
-    return MpcRoundResult(
-      status: 'completed',
-      round: round,
-      clientPayload: jsonEncode({
-        'r': _mockHex(64),
-        's': _mockHex(64),
-        'recid': _rand.nextInt(2),
-      }),
-    );
-  }
-
-  // ── Backup & Export (pass-through, no protocol rounds) ─────────
+  // ── Backup & Export ─────────────────────────────────────────────
 
   @override
   Future<BackupEnvelope> deriveBackupEnvelope(
@@ -219,6 +157,6 @@ class MockMpcEngine implements MpcEngine {
     String localShare,
     String serverSharePrivate,
   ) async {
-    return _mockHex(64); // 32-byte private key hex
+    return _mockHex(64);
   }
 }

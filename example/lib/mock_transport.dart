@@ -4,13 +4,9 @@
 /// - Session lifecycle (create → use → expire)
 /// - WireEnvelope format matching sl-dkls23 ChannelRelay protocol
 /// - Multi-round protocol (4 rounds for keygen/sign/recovery)
+/// - Unified method names: keygen, sign, recovery (round in params)
 /// - Request validation (missing params, unknown session)
 /// - Error responses using standard JSON-RPC error codes
-///
-/// Use this to:
-/// - Run examples without a real backend
-/// - Understand the full request/response structure
-/// - Test host app integration end-to-end
 library;
 
 import 'dart:convert';
@@ -18,23 +14,10 @@ import 'dart:math';
 import 'package:ceres_mpc/ceres_mpc.dart';
 
 /// Simulates a complete MPC server (Party1) with session state management.
-///
-/// The server uses WireEnvelope format for all protocol messages:
-/// {session_id, protocol, round, from_id, to_id, payload_encoding, payload, step?}
-///
-/// Protocol rounds (DKLs23 4-round):
-/// - keygen_start: returns round 1 WireEnvelope
-/// - keygen_continue (round 2): returns round 2 WireEnvelope
-/// - keygen_continue (round 3): returns round 3 WireEnvelope
-/// - keygen_continue (round 4): returns completed result (no more WireEnvelope)
 class MockMpcTransport implements MpcTransport {
-  /// Active sessions keyed by sessionId.
   final Map<String, _MockSession> _sessions = {};
-
-  /// Stored key shares keyed by mpcKeyId (simulates server DB).
   final Map<String, _MockKeyRecord> _keyStore = {};
-
-  final _rand = Random(42); // deterministic for reproducibility
+  final _rand = Random(42);
 
   @override
   Future<String> send(String payload) async {
@@ -59,12 +42,9 @@ class MockMpcTransport implements MpcTransport {
     try {
       final ep = MpcMethod.values.where((e) => e.method == method).firstOrNull;
       final result = switch (ep) {
-        MpcMethod.keygenStart => _keygenStart(params),
-        MpcMethod.keygenContinue => _keygenContinue(params),
-        MpcMethod.recoveryStart => _recoveryStart(params),
-        MpcMethod.recoveryContinue => _recoveryContinue(params),
-        MpcMethod.signStart => _signStart(params),
-        MpcMethod.signContinue => _signContinue(params),
+        MpcMethod.keygen => _keygen(params),
+        MpcMethod.recovery => _recovery(params),
+        MpcMethod.sign => _sign(params),
         MpcMethod.exportKey => _exportKey(params),
         null => throw _RpcError(-32601, 'Method not found: $method'),
       };
@@ -74,134 +54,95 @@ class MockMpcTransport implements MpcTransport {
     }
   }
 
-  // ── Keygen (4-round DKLs23 DKG) ────────────────────────────────
+  // ── Keygen (unified, round-based) ─────────────────────────────
 
-  Map<String, dynamic> _keygenStart(Map<String, dynamic> params) {
-    final sessionId = _generateSessionId('kg');
+  Map<String, dynamic> _keygen(Map<String, dynamic> params) {
+    final round = params['round'] as int? ?? 1;
 
-    // Server DKG round 1: generate initial protocol message via Relay
-    _sessions[sessionId] = _MockSession(
-      type: _SessionType.keygen,
-      round: 1,
-      maxRounds: 4,
-      state: {},
-    );
-
-    return {
-      'sessionId': sessionId,
-      'serverPayload': _wireEnvelope(
-        sessionId: sessionId,
-        protocol: 'dkg',
+    if (round == 1) {
+      final sessionId = _generateSessionId();
+      _sessions[sessionId] = _MockSession(
+        type: _SessionType.keygen,
         round: 1,
-        fromId: 1,
-        toId: 0,
-      ),
-    };
-  }
-
-  Map<String, dynamic> _keygenContinue(Map<String, dynamic> params) {
-    final sessionId = params['sessionId'] as String?;
-    if (sessionId == null) {
-      throw _RpcError(-32600, 'Missing sessionId in params');
+        maxRounds: 4,
+        state: {},
+      );
+      return {
+        'sessionId': sessionId,
+        'serverPayload': _wireEnvelope(sessionId, 'dkg', 1),
+      };
     }
+
+    final sessionId = params['sessionId'] as String?;
+    if (sessionId == null) throw _RpcError(-32600, 'Missing sessionId');
 
     final session = _sessions[sessionId];
     if (session == null || session.type != _SessionType.keygen) {
-      throw _RpcError(-32001, 'Session not found or expired: $sessionId');
+      throw _RpcError(-32001, 'Session not found: $sessionId');
     }
 
     session.round += 1;
 
-    // Round 2 and 3: return next WireEnvelope
     if (session.round < session.maxRounds) {
       return {
         'sessionId': sessionId,
-        'serverPayload': _wireEnvelope(
-          sessionId: sessionId,
-          protocol: 'dkg',
-          round: session.round,
-          fromId: 1,
-          toId: 0,
-        ),
+        'serverPayload': _wireEnvelope(sessionId, 'dkg', session.round),
       };
     }
 
-    // Round 4 (final): protocol complete, return KeygenResult
+    // Final round
     _sessions.remove(sessionId);
+    final mockId = 'mpc_${_mockHex(8)}';
+    final mockPk = '04${_mockHex(128)}';
+    final mockAddr = '0x${_mockHex(40)}';
 
-    final mockMpcKeyId = 'mpc_${_mockHex(8)}';
-    final mockPublicKeyHex = '04${_mockHex(128)}'; // uncompressed secp256k1
-    final mockAddress = '0x${_mockHex(40)}';
-
-    _keyStore[mockMpcKeyId] = _MockKeyRecord(
-      mpcKeyId: mockMpcKeyId,
-      address: mockAddress,
-      publicKey: mockPublicKeyHex,
-      keyshareSerialized: _mockHex(256),
-      rotationVersion: 1,
-      exported: false,
+    _keyStore[mockId] = _MockKeyRecord(
+      mpcKeyId: mockId, address: mockAddr, publicKey: mockPk,
+      keyshareSerialized: _mockHex(256), rotationVersion: 1, exported: false,
     );
 
     return {
       'status': 'completed',
-      'mpcKeyId': mockMpcKeyId,
-      'address': mockAddress,
-      'publicKey': mockPublicKeyHex,
+      'mpcKeyId': mockId,
+      'address': mockAddr,
+      'publicKey': mockPk,
       'curve': 'secp256k1',
       'threshold': 2,
-      'keyRef': mockMpcKeyId,
+      'keyRef': mockId,
       'backupState': 'pending',
       'rotationVersion': 1,
       'localEncryptedShare': base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
     };
   }
 
-  // ── Recovery (4-round DKLs23 key_refresh) ──────────────────────
+  // ── Recovery (unified) ────────────────────────────────────────
 
-  Map<String, dynamic> _recoveryStart(Map<String, dynamic> params) {
-    final mpcKeyId = params['mpcKeyId'] as String?;
-    if (mpcKeyId == null) {
-      throw _RpcError(-32600, 'Missing mpcKeyId in params');
+  Map<String, dynamic> _recovery(Map<String, dynamic> params) {
+    final round = params['round'] as int? ?? 1;
+
+    if (round == 1) {
+      final mpcKeyId = params['mpcKeyId'] as String?;
+      if (mpcKeyId == null) throw _RpcError(-32600, 'Missing mpcKeyId');
+      final kr = _keyStore[mpcKeyId];
+      if (kr == null) throw _RpcError(-32003, 'Key not found: $mpcKeyId');
+      if (kr.exported) throw _RpcError(-32004, 'Key already exported: $mpcKeyId');
+
+      final sessionId = _generateSessionId();
+      _sessions[sessionId] = _MockSession(
+        type: _SessionType.recovery, round: 1, maxRounds: 4,
+        state: {'mpcKeyId': mpcKeyId},
+      );
+      return {
+        'sessionId': sessionId,
+        'serverPayload': _wireEnvelope(sessionId, 'rotation', 1),
+      };
     }
 
-    final keyRecord = _keyStore[mpcKeyId];
-    if (keyRecord == null) {
-      throw _RpcError(-32003, 'Key not found: $mpcKeyId');
-    }
-    if (keyRecord.exported) {
-      throw _RpcError(-32004, 'Key already exported: $mpcKeyId');
-    }
-
-    final sessionId = _generateSessionId('rc');
-
-    _sessions[sessionId] = _MockSession(
-      type: _SessionType.recovery,
-      round: 1,
-      maxRounds: 4,
-      state: {'mpcKeyId': mpcKeyId},
-    );
-
-    return {
-      'sessionId': sessionId,
-      'serverPayload': _wireEnvelope(
-        sessionId: sessionId,
-        protocol: 'rotation',
-        round: 1,
-        fromId: 1,
-        toId: 0,
-      ),
-    };
-  }
-
-  Map<String, dynamic> _recoveryContinue(Map<String, dynamic> params) {
     final sessionId = params['sessionId'] as String?;
-    if (sessionId == null) {
-      throw _RpcError(-32600, 'Missing sessionId in params');
-    }
-
+    if (sessionId == null) throw _RpcError(-32600, 'Missing sessionId');
     final session = _sessions[sessionId];
     if (session == null || session.type != _SessionType.recovery) {
-      throw _RpcError(-32001, 'Session not found or expired: $sessionId');
+      throw _RpcError(-32001, 'Session not found: $sessionId');
     }
 
     session.round += 1;
@@ -209,94 +150,65 @@ class MockMpcTransport implements MpcTransport {
     if (session.round < session.maxRounds) {
       return {
         'sessionId': sessionId,
-        'serverPayload': _wireEnvelope(
-          sessionId: sessionId,
-          protocol: 'rotation',
-          round: session.round,
-          fromId: 1,
-          toId: 0,
-        ),
+        'serverPayload': _wireEnvelope(sessionId, 'rotation', session.round),
       };
     }
 
-    // Final round: complete recovery
     _sessions.remove(sessionId);
-
     final mpcKeyId = session.state['mpcKeyId'] as String;
-    final keyRecord = _keyStore[mpcKeyId]!;
-
-    keyRecord.keyshareSerialized = _mockHex(256); // new rotated key
-    keyRecord.rotationVersion += 1;
+    final kr = _keyStore[mpcKeyId]!;
+    kr.keyshareSerialized = _mockHex(256);
+    kr.rotationVersion += 1;
 
     return {
       'status': 'completed',
       'mpcKeyId': mpcKeyId,
-      'address': keyRecord.address,
-      'publicKey': keyRecord.publicKey,
+      'address': kr.address,
+      'publicKey': kr.publicKey,
       'curve': 'secp256k1',
       'threshold': 2,
       'keyRef': mpcKeyId,
       'backupState': 'pending',
-      'rotationVersion': keyRecord.rotationVersion,
+      'rotationVersion': kr.rotationVersion,
       'localEncryptedShare': base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
       'encryptedBackupShare': null,
     };
   }
 
-  // ── Sign (4-round DKLs23 DSG) ─────────────────────────────────
+  // ── Sign (unified) ────────────────────────────────────────────
 
-  Map<String, dynamic> _signStart(Map<String, dynamic> params) {
-    final mpcKeyId = params['mpcKeyId'] as String?;
-    final messageHash = params['messageHash'] as String?;
+  Map<String, dynamic> _sign(Map<String, dynamic> params) {
+    final round = params['round'] as int? ?? 1;
 
-    if (mpcKeyId == null || messageHash == null) {
-      throw _RpcError(-32600, 'Missing mpcKeyId or messageHash in params');
+    if (round == 1) {
+      final mpcKeyId = params['mpcKeyId'] as String?;
+      final messageHash = params['messageHash'] as String?;
+      if (mpcKeyId == null || messageHash == null) {
+        throw _RpcError(-32600, 'Missing mpcKeyId or messageHash');
+      }
+      if (messageHash.length != 64) {
+        throw _RpcError(-32600, 'messageHash must be 64 hex chars');
+      }
+      final kr = _keyStore[mpcKeyId];
+      if (kr == null) throw _RpcError(-32003, 'Key not found: $mpcKeyId');
+      if (kr.exported) throw _RpcError(-32004, 'Key already exported: $mpcKeyId');
+
+      final sessionId = _generateSessionId();
+      _sessions[sessionId] = _MockSession(
+        type: _SessionType.sign, round: 1, maxRounds: 4,
+        state: {'mpcKeyId': mpcKeyId, 'messageHash': messageHash},
+      );
+      return {
+        'sessionId': sessionId,
+        'serverPayload': _wireEnvelope(sessionId, 'dsg', 1),
+      };
     }
-    if (messageHash.length != 64) {
-      throw _RpcError(-32600, 'messageHash must be 64 hex chars (32 bytes)');
-    }
 
-    final keyRecord = _keyStore[mpcKeyId];
-    if (keyRecord == null) {
-      throw _RpcError(-32003, 'Key not found: $mpcKeyId');
-    }
-    if (keyRecord.exported) {
-      throw _RpcError(-32004, 'Key already exported: $mpcKeyId');
-    }
-
-    final sessionId = _generateSessionId('sg');
-
-    _sessions[sessionId] = _MockSession(
-      type: _SessionType.sign,
-      round: 1,
-      maxRounds: 4,
-      state: {
-        'mpcKeyId': mpcKeyId,
-        'messageHash': messageHash,
-      },
-    );
-
-    return {
-      'sessionId': sessionId,
-      'serverPayload': _wireEnvelope(
-        sessionId: sessionId,
-        protocol: 'dsg',
-        round: 1,
-        fromId: 1,
-        toId: 0,
-      ),
-    };
-  }
-
-  Map<String, dynamic> _signContinue(Map<String, dynamic> params) {
     final sessionId = params['sessionId'] as String?;
-    if (sessionId == null) {
-      throw _RpcError(-32600, 'Missing sessionId in params');
-    }
-
+    if (sessionId == null) throw _RpcError(-32600, 'Missing sessionId');
     final session = _sessions[sessionId];
     if (session == null || session.type != _SessionType.sign) {
-      throw _RpcError(-32001, 'Session not found or expired: $sessionId');
+      throw _RpcError(-32001, 'Session not found: $sessionId');
     }
 
     session.round += 1;
@@ -304,24 +216,16 @@ class MockMpcTransport implements MpcTransport {
     if (session.round < session.maxRounds) {
       return {
         'sessionId': sessionId,
-        'serverPayload': _wireEnvelope(
-          sessionId: sessionId,
-          protocol: 'dsg',
-          round: session.round,
-          fromId: 1,
-          toId: 0,
-        ),
+        'serverPayload': _wireEnvelope(sessionId, 'dsg', session.round),
       };
     }
 
-    // Final round: return signature
     _sessions.remove(sessionId);
-
     return {
       'status': 'completed',
-      'r': _mockHex(64), // 32-byte r component
-      's': _mockHex(64), // 32-byte s component
-      'recid': _rand.nextInt(2), // recovery id: 0 or 1
+      'r': _mockHex(64),
+      's': _mockHex(64),
+      'recid': _rand.nextInt(2),
     };
   }
 
@@ -329,81 +233,45 @@ class MockMpcTransport implements MpcTransport {
 
   Map<String, dynamic> _exportKey(Map<String, dynamic> params) {
     final mpcKeyId = params['mpcKeyId'] as String?;
-    if (mpcKeyId == null) {
-      throw _RpcError(-32600, 'Missing mpcKeyId in params');
-    }
-
-    final keyRecord = _keyStore[mpcKeyId];
-    if (keyRecord == null) {
-      throw _RpcError(-32003, 'Key not found: $mpcKeyId');
-    }
-    if (keyRecord.exported) {
-      throw _RpcError(-32004, 'Key already exported: $mpcKeyId');
-    }
-
-    keyRecord.exported = true;
-
-    // Return server's keyshare as Base64 bytes for client-side reconstruction
-    return {
-      'serverKeyshare': base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
-    };
+    if (mpcKeyId == null) throw _RpcError(-32600, 'Missing mpcKeyId');
+    final kr = _keyStore[mpcKeyId];
+    if (kr == null) throw _RpcError(-32003, 'Key not found: $mpcKeyId');
+    if (kr.exported) throw _RpcError(-32004, 'Key already exported: $mpcKeyId');
+    kr.exported = true;
+    return {'serverKeyshare': base64Encode(List.generate(128, (_) => _rand.nextInt(256)))};
   }
 
   // ── Helpers ─────────────────────────────────────────────────────
 
-  /// Build a WireEnvelope JSON map matching the Rust WireEnvelope struct.
-  ///
-  /// Fields: session_id, protocol, round, from_id, to_id,
-  ///         payload_encoding ("cbor_base64"), payload (Base64 mock bytes)
-  Map<String, dynamic> _wireEnvelope({
-    required String sessionId,
-    required String protocol,
-    required int round,
-    required int fromId,
-    required int toId,
-  }) {
-    // Generate mock protocol bytes (simulates CBOR-encoded DKLs23 message)
-    final mockPayloadBytes = List.generate(64 + _rand.nextInt(64), (_) => _rand.nextInt(256));
-    final payloadBase64 = base64Encode(mockPayloadBytes);
-
+  Map<String, dynamic> _wireEnvelope(String sessionId, String protocol, int round) {
+    final mockBytes = List.generate(64 + _rand.nextInt(64), (_) => _rand.nextInt(256));
     return {
       'session_id': sessionId,
       'protocol': protocol,
       'round': round,
-      'from_id': fromId,
-      'to_id': toId,
+      'from_id': 1,
+      'to_id': 0,
       'payload_encoding': 'cbor_base64',
-      'payload': payloadBase64,
+      'payload': base64Encode(mockBytes),
     };
   }
 
-  String _generateSessionId(String prefix) {
-    // Generate a 64-char hex string (32 bytes) as required by Rust InstanceId
-    return _mockHex(64);
-  }
+  String _generateSessionId() => _mockHex(64);
 
-  /// Generate deterministic mock hex string of given length.
   String _mockHex(int length) {
     const chars = '0123456789abcdef';
     return List.generate(length, (_) => chars[_rand.nextInt(16)]).join();
   }
 
   String _rpcOk(Object result, Object? id) => jsonEncode({
-        'jsonrpc': '2.0',
-        'result': result,
-        'id': id,
-      });
+    'jsonrpc': '2.0', 'result': result, 'id': id,
+  });
 
-  String _rpcError(int code, String message, Object? data, Object? id) =>
-      jsonEncode({
-        'jsonrpc': '2.0',
-        'error': {
-          'code': code,
-          'message': message,
-          if (data != null) 'data': data,
-        },
-        'id': id,
-      });
+  String _rpcError(int code, String message, Object? data, Object? id) => jsonEncode({
+    'jsonrpc': '2.0',
+    'error': {'code': code, 'message': message, if (data != null) 'data': data},
+    'id': id,
+  });
 }
 
 // ── Internal types ────────────────────────────────────────────────
@@ -415,36 +283,20 @@ class _MockSession {
   int round;
   final int maxRounds;
   final Map<String, dynamic> state;
-
-  _MockSession({
-    required this.type,
-    required this.round,
-    required this.maxRounds,
-    required this.state,
-  });
+  _MockSession({required this.type, required this.round, required this.maxRounds, required this.state});
 }
 
 class _MockKeyRecord {
-  final String mpcKeyId;
-  final String address;
-  final String publicKey;
+  final String mpcKeyId, address, publicKey;
   String keyshareSerialized;
   int rotationVersion;
   bool exported;
-
-  _MockKeyRecord({
-    required this.mpcKeyId,
-    required this.address,
-    required this.publicKey,
-    required this.keyshareSerialized,
-    required this.rotationVersion,
-    required this.exported,
-  });
+  _MockKeyRecord({required this.mpcKeyId, required this.address, required this.publicKey,
+    required this.keyshareSerialized, required this.rotationVersion, required this.exported});
 }
 
 class _RpcError implements Exception {
   final int code;
   final String message;
-
   _RpcError(this.code, this.message);
 }

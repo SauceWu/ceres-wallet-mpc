@@ -6,13 +6,11 @@ import '../transport/mpc_transport.dart';
 import 'mpc_exceptions.dart';
 
 /// JSON-RPC 2.0 method names for MPC protocol operations.
+/// Merged: keygen_start/continue → keygen, sign_start/continue → sign, etc.
 enum MpcMethod {
-  keygenStart('keygen_start'),
-  keygenContinue('keygen_continue'),
-  recoveryStart('recovery_start'),
-  recoveryContinue('recovery_continue'),
-  signStart('sign_start'),
-  signContinue('sign_continue'),
+  keygen('keygen'),
+  recovery('recovery'),
+  sign('sign'),
   exportKey('export_key');
 
   const MpcMethod(this.method);
@@ -35,37 +33,35 @@ class MpcClient {
       : _engine = engine,
         _transport = transport;
 
-  /// Execute full keygen protocol.
+  /// Execute full keygen protocol (4-round DKLs23 DKG).
   Future<KeygenResult> keygen() async {
-    final initData = await _rpcCall(MpcMethod.keygenStart, {});
+    // Round 1: initiate
+    final initData = await _rpcCall(MpcMethod.keygen, {'round': 1});
     final sessionId = initData['sessionId'] as String;
 
-    final round1 = await _engine.keygenStart(
-      sessionId,
-      jsonEncode(initData['serverPayload']),
+    var currentResult = await _engine.keygen(
+      sessionId, 1, jsonEncode(initData['serverPayload']),
     );
-    _checkProtocolError(round1);
+    _checkProtocolError(currentResult);
 
-    var currentResult = round1;
+    // Rounds 2+: continue until completed
+    int round = 2;
     while (currentResult.isContinue) {
-      final serverData = await _rpcCall(
-        MpcMethod.keygenContinue,
-        {
-          'sessionId': sessionId,
-          'round': currentResult.round,
-          'clientPayload': currentResult.clientPayload,
-        },
-      );
+      final serverData = await _rpcCall(MpcMethod.keygen, {
+        'sessionId': sessionId,
+        'round': round,
+        'clientPayload': currentResult.clientPayload,
+      });
 
       if (serverData['status'] == 'completed') {
         return KeygenResult.fromJson(serverData);
       }
 
-      currentResult = await _engine.keygenContinue(
-        sessionId,
-        jsonEncode(serverData['serverPayload']),
+      currentResult = await _engine.keygen(
+        sessionId, round, jsonEncode(serverData['serverPayload']),
       );
       _checkProtocolError(currentResult);
+      round++;
     }
 
     if (currentResult.isCompleted && currentResult.clientPayload != null) {
@@ -78,7 +74,7 @@ class MpcClient {
         'Unexpected keygen state: ${currentResult.status}');
   }
 
-  /// Execute full recovery protocol.
+  /// Execute full recovery protocol (4-round DKLs23 key_refresh).
   Future<RecoveryResult> recover({
     required String mpcKeyId,
     required String encryptedBackupShare,
@@ -87,44 +83,41 @@ class MpcClient {
     String? newUserBackupSecret,
   }) async {
     final backupShare = await _engine.decryptBackupShare(
-      encryptedBackupShare,
-      userBackupSecret,
+      encryptedBackupShare, userBackupSecret,
     );
 
-    final initData = await _rpcCall(
-      MpcMethod.recoveryStart,
-      {'mpcKeyId': mpcKeyId},
-    );
+    // Round 1: initiate with backup_share
+    final initData = await _rpcCall(MpcMethod.recovery, {
+      'mpcKeyId': mpcKeyId,
+      'round': 1,
+    });
     final sessionId = initData['sessionId'] as String;
 
-    final round1 = await _engine.recoverStart(
-      sessionId,
-      backupShare,
-      jsonEncode(initData['serverPayload']),
-      currentRotationVersion,
+    var currentResult = await _engine.recover(
+      sessionId, 1, jsonEncode(initData['serverPayload']),
+      backupShare: backupShare,
+      currentRotationVersion: currentRotationVersion,
     );
-    _checkProtocolError(round1);
+    _checkProtocolError(currentResult);
 
-    var currentResult = round1;
+    // Rounds 2+
+    int round = 2;
     while (currentResult.isContinue) {
-      final serverData = await _rpcCall(
-        MpcMethod.recoveryContinue,
-        {
-          'sessionId': sessionId,
-          'round': currentResult.round,
-          'clientPayload': currentResult.clientPayload,
-        },
-      );
+      final serverData = await _rpcCall(MpcMethod.recovery, {
+        'sessionId': sessionId,
+        'round': round,
+        'clientPayload': currentResult.clientPayload,
+      });
 
       if (serverData['status'] == 'completed') {
         return RecoveryResult.fromJson(serverData);
       }
 
-      currentResult = await _engine.recoverContinue(
-        sessionId,
-        jsonEncode(serverData['serverPayload']),
+      currentResult = await _engine.recover(
+        sessionId, round, jsonEncode(serverData['serverPayload']),
       );
       _checkProtocolError(currentResult);
+      round++;
     }
 
     if (currentResult.isCompleted && currentResult.clientPayload != null) {
@@ -160,46 +153,45 @@ class MpcClient {
         'Unexpected recovery state: ${currentResult.status}');
   }
 
-  /// Execute full sign protocol.
+  /// Execute full sign protocol (4-round DKLs23 DSG).
   Future<SignResult> sign({
     required String mpcKeyId,
     required String messageHash,
     required String localEncryptedShare,
   }) async {
-    final initData = await _rpcCall(
-      MpcMethod.signStart,
-      {'mpcKeyId': mpcKeyId, 'messageHash': messageHash},
-    );
+    // Round 1: initiate with share + hash
+    final initData = await _rpcCall(MpcMethod.sign, {
+      'mpcKeyId': mpcKeyId,
+      'messageHash': messageHash,
+      'round': 1,
+    });
     final sessionId = initData['sessionId'] as String;
 
-    final round1 = await _engine.signStart(
-      sessionId,
-      localEncryptedShare,
-      messageHash,
-      jsonEncode(initData['serverPayload']),
+    var currentResult = await _engine.sign(
+      sessionId, 1, jsonEncode(initData['serverPayload']),
+      share: localEncryptedShare,
+      messageHashHex: messageHash,
     );
-    _checkProtocolError(round1);
+    _checkProtocolError(currentResult);
 
-    var currentResult = round1;
+    // Rounds 2+
+    int round = 2;
     while (currentResult.isContinue) {
-      final serverData = await _rpcCall(
-        MpcMethod.signContinue,
-        {
-          'sessionId': sessionId,
-          'round': currentResult.round,
-          'clientPayload': currentResult.clientPayload,
-        },
-      );
+      final serverData = await _rpcCall(MpcMethod.sign, {
+        'sessionId': sessionId,
+        'round': round,
+        'clientPayload': currentResult.clientPayload,
+      });
 
       if (serverData['status'] == 'completed') {
         return SignResult.fromJson(serverData);
       }
 
-      currentResult = await _engine.signContinue(
-        sessionId,
-        jsonEncode(serverData['serverPayload'] ?? {}),
+      currentResult = await _engine.sign(
+        sessionId, round, jsonEncode(serverData['serverPayload'] ?? {}),
       );
       _checkProtocolError(currentResult);
+      round++;
     }
 
     if (currentResult.isCompleted && currentResult.clientPayload != null) {
@@ -224,8 +216,7 @@ class MpcClient {
     final serverSharePrivate = jsonEncode(serverData['serverSharePrivate']);
 
     final resultJson = await _engine.exportPrivateKey(
-      localEncryptedShare,
-      serverSharePrivate,
+      localEncryptedShare, serverSharePrivate,
     );
     final payload = jsonDecode(resultJson) as Map<String, dynamic>;
     return ExportResult.fromJson(_snakeToCamelKeys(payload));
@@ -233,10 +224,6 @@ class MpcClient {
 
   // ── JSON-RPC 2.0 helpers ──────────────────────────────────────
 
-  /// Send a JSON-RPC 2.0 request and return the `result` field.
-  ///
-  /// Throws [MpcRpcException] if the server returns an error object.
-  /// Throws [MpcTransportException] if the transport layer fails.
   Future<Map<String, dynamic>> _rpcCall(
     MpcMethod method,
     Map<String, dynamic> params,
@@ -267,7 +254,6 @@ class MpcClient {
       throw MpcProtocolException('Invalid JSON-RPC response: $e');
     }
 
-    // Check for JSON-RPC error
     if (response.containsKey('error') && response['error'] != null) {
       final error = response['error'] as Map<String, dynamic>;
       throw MpcRpcException(
@@ -277,12 +263,9 @@ class MpcClient {
       );
     }
 
-    // Extract result
     final result = response['result'];
     if (result == null) {
-      throw MpcProtocolException(
-        'JSON-RPC response missing "result" field',
-      );
+      throw MpcProtocolException('JSON-RPC response missing "result" field');
     }
 
     return result as Map<String, dynamic>;

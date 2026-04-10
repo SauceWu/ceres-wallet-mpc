@@ -3,104 +3,66 @@ import 'dart:convert';
 import '../dto/mpc_dtos.dart';
 import '../rust/frb_generated.dart';
 
-/// Internal Rust FFI wrapper — NOT exposed to host apps (per D-06).
+/// Internal Rust FFI wrapper — NOT exposed to host apps.
 ///
 /// Wraps the FRB-generated [RustLibApi] with typed Dart methods that
-/// deserialize JSON responses into [MpcRoundResult]. Errors from the
-/// Rust side are rethrown for the upstream MpcClient layer to handle.
+/// deserialize JSON responses into [MpcRoundResult].
 class MpcEngine {
   final RustLibApi _api;
 
   MpcEngine(this._api);
 
-  Future<MpcRoundResult> keygenStart(
+  /// DKG 协议统一入口。round==1 创建 session，round>1 推进。
+  Future<MpcRoundResult> keygen(
     String sessionId,
+    int round,
     String serverPayload,
   ) async {
-    final result = await _api.crateApiMpcEngineKeygenStart(
+    final result = await _api.crateApiMpcEngineKeygen(
       sessionId: sessionId,
+      round: round,
       serverPayload: serverPayload,
     );
-    return MpcRoundResult.fromJson(
-      jsonDecode(result) as Map<String, dynamic>,
-    );
+    return MpcRoundResult.fromJson(jsonDecode(result) as Map<String, dynamic>);
   }
 
-  Future<MpcRoundResult> keygenContinue(
+  /// key_refresh 协议统一入口。round==1 需要额外参数。
+  Future<MpcRoundResult> recover(
     String sessionId,
-    String serverPayload,
-  ) async {
-    final result = await _api.crateApiMpcEngineKeygenContinue(
+    int round,
+    String serverPayload, {
+    String? backupShare,
+    int? currentRotationVersion,
+  }) async {
+    final result = await _api.crateApiMpcEngineRecover(
       sessionId: sessionId,
+      round: round,
       serverPayload: serverPayload,
-    );
-    return MpcRoundResult.fromJson(
-      jsonDecode(result) as Map<String, dynamic>,
-    );
-  }
-
-  Future<MpcRoundResult> recoverStart(
-    String sessionId,
-    String backupShare,
-    String serverPayload,
-    int currentRotationVersion,
-  ) async {
-    final result = await _api.crateApiMpcEngineRecoverStart(
-      sessionId: sessionId,
       backupShare: backupShare,
-      serverPayload: serverPayload,
       currentRotationVersion: currentRotationVersion,
     );
-    return MpcRoundResult.fromJson(
-      jsonDecode(result) as Map<String, dynamic>,
-    );
+    return MpcRoundResult.fromJson(jsonDecode(result) as Map<String, dynamic>);
   }
 
-  Future<MpcRoundResult> recoverContinue(
+  /// DSG 协议统一入口。round==1 需要额外参数。
+  Future<MpcRoundResult> sign(
     String sessionId,
-    String serverPayload,
-  ) async {
-    final result = await _api.crateApiMpcEngineRecoverContinue(
+    int round,
+    String serverPayload, {
+    String? share,
+    String? messageHashHex,
+  }) async {
+    final result = await _api.crateApiMpcEngineSign(
       sessionId: sessionId,
+      round: round,
       serverPayload: serverPayload,
-    );
-    return MpcRoundResult.fromJson(
-      jsonDecode(result) as Map<String, dynamic>,
-    );
-  }
-
-  Future<MpcRoundResult> signStart(
-    String sessionId,
-    String share,
-    String messageHashHex,
-    String serverPayload,
-  ) async {
-    final result = await _api.crateApiMpcEngineSignStart(
-      sessionId: sessionId,
       share: share,
       messageHashHex: messageHashHex,
-      serverPayload: serverPayload,
     );
-    return MpcRoundResult.fromJson(
-      jsonDecode(result) as Map<String, dynamic>,
-    );
-  }
-
-  Future<MpcRoundResult> signContinue(
-    String sessionId,
-    String serverPayload,
-  ) async {
-    final result = await _api.crateApiMpcEngineSignContinue(
-      sessionId: sessionId,
-      serverPayload: serverPayload,
-    );
-    return MpcRoundResult.fromJson(
-      jsonDecode(result) as Map<String, dynamic>,
-    );
+    return MpcRoundResult.fromJson(jsonDecode(result) as Map<String, dynamic>);
   }
 
   /// Derive a backup envelope from a live share and user secret.
-  /// Uses AES-256-GCM with HKDF-SHA256 key derivation.
   Future<BackupEnvelope> deriveBackupEnvelope(
     String localEncryptedShare,
     String userBackupSecret,
@@ -111,14 +73,10 @@ class MpcEngine {
       userBackupSecret: userBackupSecret,
       createdAt: createdAt,
     );
-    return BackupEnvelope.fromJson(
-      jsonDecode(result) as Map<String, dynamic>,
-    );
+    return BackupEnvelope.fromJson(jsonDecode(result) as Map<String, dynamic>);
   }
 
   /// Decrypt a backup envelope to recover the device backup share.
-  /// Phase 2 stub — real decryption in Phase 5.
-  /// Per D-08: returns opaque deviceBackupShare string for recovery flow.
   Future<String> decryptBackupShare(
     String encryptedEnvelope,
     String userBackupSecret,
