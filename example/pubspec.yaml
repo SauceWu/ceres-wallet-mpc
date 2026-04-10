@@ -1,0 +1,27 @@
+name: ceres_mpc_example
+description: "Example app demonstrating ceres_mpc SDK usage."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ceres_mpc:
+    path: ../
+  web_socket_channel: ^3.0.3
+  http: ^1.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  async: ^2.13.0
+  stream_channel: ^2.1.4
+
+flutter:
+  uses-material-design: true

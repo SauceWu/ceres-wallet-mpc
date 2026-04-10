@@ -1,0 +1,58 @@
+name: Precompile Rust Binaries
+
+# Trigger: push a tag like v0.1.0, or manual
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  precompile:
+    runs-on: macos-latest  # macOS can cross-compile for iOS; Android via NDK
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios,armv7-linux-androideabi,aarch64-linux-android,x86_64-linux-android
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+
+      - name: Install Dart dependencies
+        working-directory: cargokit/build_tool
+        run: dart pub get
+
+      - name: Precompile binaries
+        working-directory: cargokit/build_tool
+        env:
+          PRIVATE_KEY: ${{ secrets.CARGOKIT_PRIVATE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANDROID_SDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}/..
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          dart run bin/build_tool.dart precompile-binaries \
+            --manifest-dir=../../rust \
+            --repository=SauceWu/ceres-mpc \
+            --target=aarch64-apple-ios \
+            --target=aarch64-apple-ios-sim \
+            --target=x86_64-apple-ios \
+            --target=armv7-linux-androideabi \
+            --target=aarch64-linux-android \
+            --target=x86_64-linux-android \
+            --android-sdk-location=${{ steps.setup-ndk.outputs.ndk-path }}/.. \
+            --android-ndk-version=26.3.11579264 \
+            --android-min-sdk-version=21 \
+            --verbose
