@@ -44,11 +44,7 @@ class MpcClient {
     );
     _checkProtocolError(currentResult);
 
-    // Rounds 2+: continue until client Rust engine reports completed.
-    // IMPORTANT: even if the server returns status=completed, we still
-    // need to feed that response to the Rust engine so it can extract
-    // the Keyshare and produce localEncryptedShare (which only exists
-    // on the client side).
+    // Rounds 2+: loop until engine or server signals completion
     int round = 2;
     while (currentResult.isContinue) {
       final serverData = await _rpcCall(MpcMethod.keygen, {
@@ -57,8 +53,6 @@ class MpcClient {
         'clientPayload': currentResult.clientPayload,
       });
 
-      // Always feed server response to engine — even if server says completed,
-      // the engine needs to process the final round to extract the Keyshare.
       final serverPayload = serverData['serverPayload'];
       if (serverPayload != null) {
         currentResult = await _engine.keygen(
@@ -66,26 +60,13 @@ class MpcClient {
         );
         _checkProtocolError(currentResult);
       } else {
-        // Server completed without serverPayload — engine should also be done
+        // Server completed (no more serverPayload) — collect Keyshare from engine
+        // round=0 tells Rust to join the protocol task and return the Keyshare
+        currentResult = await _engine.keygen(sessionId, 0, '');
+        _checkProtocolError(currentResult);
         break;
       }
       round++;
-    }
-
-    if (currentResult.isCompletedWithMessage && currentResult.clientPayload != null) {
-      // Engine completed but has one last message to send to server
-      final wrapped = jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
-      final envelope = jsonEncode(wrapped['envelope']);
-      final result = wrapped['result'] as Map<String, dynamic>;
-
-      // Fire-and-forget: send last client message to server so it can finish too
-      await _rpcCall(MpcMethod.keygen, {
-        'sessionId': sessionId,
-        'round': round,
-        'clientPayload': envelope,
-      }).catchError((_) => <String, dynamic>{}); // Server may return completed, ignore
-
-      return KeygenResult.fromJson(_snakeToCamelKeys(result));
     }
 
     if (currentResult.isCompleted && currentResult.clientPayload != null) {
