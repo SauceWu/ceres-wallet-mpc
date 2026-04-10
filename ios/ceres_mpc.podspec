@@ -13,7 +13,7 @@ flutter_rust_bridge.
                        DESC
   s.homepage         = 'https://github.com/SauceWu/ceres-mpc'
   s.license          = { :type => 'MIT', :file => '../LICENSE' }
-  s.author           = { 'SauceWu' => 'sauce.wu@hotmail.com' }
+  s.author           = { 'SauceWu' => 'GitHub Issues: https://github.com/SauceWu/ceres-mpc/issues' }
   s.module_name      = 'ceres_mpc'
 
   # This will ensure the source files in Classes/ are included in the native

@@ -257,7 +257,7 @@ cd rust && cargo test
 - Session state is ephemeral and cleaned up after protocol completion
 - Transport layer is fully controlled by the host application
 
-If you discover a security vulnerability, please report it responsibly via [sauce.wu@hotmail.com](mailto:sauce.wu@hotmail.com).
+If you discover a security vulnerability, please open a private report or issue through the repository contact channels at [GitHub Issues](https://github.com/SauceWu/ceres-mpc/issues).
 
 ## License
 

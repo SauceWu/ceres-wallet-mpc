@@ -276,7 +276,7 @@ cd rust && cargo test
 - 会话状态为临时态，协议完成后自动清理
 - 传输层完全由宿主应用控制
 
-发现安全漏洞请通过 [sauce.wu@hotmail.com](mailto:sauce.wu@hotmail.com) 负责任地报告。
+发现安全漏洞请通过仓库的 [GitHub Issues](https://github.com/SauceWu/ceres-mpc/issues) 联系渠道进行反馈。
 
 ## 许可证
 
