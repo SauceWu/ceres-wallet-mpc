@@ -71,11 +71,12 @@ fn inject_all(tx: &mpsc::Sender<Vec<u8>>, messages: Vec<Vec<u8>>) -> Result<(), 
     Ok(())
 }
 
-/// 批量收集 protocol 输出：recv() 阻塞等第一条，try_recv() 取完剩余
+/// 批量收集 protocol 输出：recv() 阻塞等第一条，短暂 yield 让 task 产出同轮剩余消息，try_recv() 取完
 fn collect_all(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Option<Vec<Vec<u8>>> {
     let first = get_runtime().block_on(rx.recv())?;
     let mut messages = vec![first];
-    // 用 try_recv 非阻塞地取出所有已就绪的消息
+    // 给 protocol task 10ms 时间产出同一逻辑轮次的剩余消息
+    std::thread::sleep(std::time::Duration::from_millis(10));
     while let Ok(msg) = rx.try_recv() {
         messages.push(msg);
     }
