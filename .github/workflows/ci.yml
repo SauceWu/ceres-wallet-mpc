@@ -40,9 +40,22 @@ jobs:
 
       - name: Rust build check - Android
         working-directory: rust
-        env:
-          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang
-        run: cargo build --target aarch64-linux-android --release
+        shell: bash
+        run: |
+          PREBUILT_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt"
+          if [ -d "$PREBUILT_ROOT/darwin-arm64/bin" ]; then
+            TOOLCHAIN_BIN="$PREBUILT_ROOT/darwin-arm64/bin"
+          else
+            TOOLCHAIN_BIN="$PREBUILT_ROOT/darwin-x86_64/bin"
+          fi
+
+          export CC_aarch64_linux_android="$TOOLCHAIN_BIN/aarch64-linux-android21-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN_BIN/aarch64-linux-android21-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN_BIN/llvm-ar"
+          export RANLIB_aarch64_linux_android="$TOOLCHAIN_BIN/llvm-ranlib"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+
+          cargo build --target aarch64-linux-android --release
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
