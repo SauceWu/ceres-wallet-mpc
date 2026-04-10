@@ -51,46 +51,21 @@ fn random_seed() -> [u8; 32] {
     seed
 }
 
-/// 解析服务端信封，返回 (envelope, 所有 payload bytes)
-fn parse_server_envelope(server_payload: &str) -> Result<(WireEnvelope, Vec<Vec<u8>>), String> {
+fn parse_server_envelope(server_payload: &str) -> Result<(WireEnvelope, Vec<u8>), String> {
     let server_env: WireEnvelope = serde_json::from_str(server_payload)
         .map_err(|e| format!("invalid server envelope JSON: {e}"))?;
     if server_env.from_id != 1 {
         return Err(format!("expected from_id=1 (server), got from_id={}", server_env.from_id));
     }
-    let msgs = server_env.decode_all_payloads()?;
-    Ok((server_env, msgs))
+    let server_msg_bytes = BASE64_STANDARD
+        .decode(&server_env.payload)
+        .map_err(|e| format!("base64 decode server payload: {e}"))?;
+    Ok((server_env, server_msg_bytes))
 }
 
-/// 批量注入消息到 protocol channel
-fn inject_all(tx: &mpsc::Sender<Vec<u8>>, messages: Vec<Vec<u8>>) -> Result<(), String> {
-    for msg in messages {
-        get_runtime().block_on(tx.send(msg))
-            .map_err(|e| format!("failed to send msg to protocol: {e}"))?;
-    }
-    Ok(())
-}
-
-/// 批量收集 protocol 输出：recv() 阻塞等第一条，短暂 yield 让 task 产出同轮剩余消息，try_recv() 取完
-fn collect_all(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Option<Vec<Vec<u8>>> {
-    let first = get_runtime().block_on(rx.recv())?;
-    let mut messages = vec![first];
-    // 给 protocol task 10ms 时间产出同一逻辑轮次的剩余消息
-    std::thread::sleep(std::time::Duration::from_millis(10));
-    while let Ok(msg) = rx.try_recv() {
-        messages.push(msg);
-    }
-    Some(messages)
-}
-
-/// 将批量消息打包为 WireEnvelope 并返回 in_progress 状态
-fn make_in_progress_batch(session_id: &str, protocol: ProtocolType, round: u8, messages: &[Vec<u8>]) -> Result<String, String> {
-    let payloads: Vec<String> = messages.iter().map(|m| BASE64_STANDARD.encode(m)).collect();
-    let env = if payloads.len() == 1 {
-        WireEnvelope::new(session_id.to_string(), protocol, round, 0, Some(1), payloads.into_iter().next().unwrap(), None)
-    } else {
-        WireEnvelope::new_batch(session_id.to_string(), protocol, round, 0, Some(1), payloads)
-    };
+fn make_in_progress(session_id: &str, protocol: ProtocolType, round: u8, client_msg_bytes: &[u8]) -> Result<String, String> {
+    let client_b64 = BASE64_STANDARD.encode(client_msg_bytes);
+    let env = WireEnvelope::new(session_id.to_string(), protocol, round, 0, Some(1), client_b64, None);
     let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
     let result = MpcRoundResult {
         status: "continue".to_string(),
@@ -157,7 +132,7 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
         return make_completed(0, serde_json::to_string(&completed).map_err(|e| e.to_string())?);
     }
 
-    let (server_env, server_msgs) = parse_server_envelope(&server_payload)?;
+    let (server_env, server_msg_bytes) = parse_server_envelope(&server_payload)?;
 
     if round == 1 {
         let inst = instance_id_from_session(&session_id)?;
@@ -176,11 +151,13 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
                 .map_err(|e| e.to_string())
         });
 
-        inject_all(&tx_in, server_msgs)?;
+        get_runtime().block_on(tx_in.send(server_msg_bytes))
+            .map_err(|e| format!("failed to send initial server msg: {e}"))?;
 
-        let client_msgs = match collect_all(&mut rx_out) {
-            Some(msgs) => msgs,
+        let client_msg = match get_runtime().block_on(rx_out.recv()) {
+            Some(msg) => msg,
             None => {
+                // Protocol task ended before producing output — get the actual error
                 let err = get_runtime().block_on(task_handle)
                     .map_err(|e| format!("keygen task panicked: {e}"))
                     .and_then(|r| r);
@@ -192,26 +169,27 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
             tx_in, rx_out, task_handle: Some(task_handle),
         });
 
-        return make_in_progress_batch(&session_id, ProtocolType::Dkg, server_env.round, &client_msgs);
+        return make_in_progress(&session_id, ProtocolType::Dkg, server_env.round, &client_msg);
     }
 
-    // round > 1: 批量注入 + 批量收集
+    // round > 1: 推进
     let tx_in = KEYGEN_SESSIONS.lock().unwrap()
         .get(&session_id)
         .ok_or_else(|| format!("keygen session not found: {session_id}"))?
         .tx_in.clone();
 
-    inject_all(&tx_in, server_msgs)?;
+    get_runtime().block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send server msg: {e}"))?;
 
-    let next_msgs = {
+    let next_msg = {
         let mut sessions = KEYGEN_SESSIONS.lock().unwrap();
         let session = sessions.get_mut(&session_id)
             .ok_or_else(|| format!("keygen session not found: {session_id}"))?;
-        collect_all(&mut session.rx_out)
+        get_runtime().block_on(session.rx_out.recv())
     };
 
-    match next_msgs {
-        Some(client_msgs) => make_in_progress_batch(&session_id, ProtocolType::Dkg, server_env.round, &client_msgs),
+    match next_msg {
+        Some(client_msg) => make_in_progress(&session_id, ProtocolType::Dkg, server_env.round, &client_msg),
         None => {
             let task_handle = KEYGEN_SESSIONS.lock().unwrap()
                 .remove(&session_id)
@@ -242,7 +220,7 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
 
 // ── Recovery ─────────────────────────────────────────────────────────
 
-/// key_refresh 协议统一入口。round==0 收集，round==1 创建，round>1 推进。
+/// key_refresh 协议统一入口。round==1 需要 backup_share 和 current_rotation_version。
 pub fn recover(
     session_id: String,
     round: i32,
@@ -250,30 +228,7 @@ pub fn recover(
     backup_share: Option<String>,
     current_rotation_version: Option<i32>,
 ) -> Result<String, String> {
-    if round == 0 {
-        let session = RECOVERY_SESSIONS.lock().unwrap()
-            .remove(&session_id)
-            .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
-        let rv = session.current_rotation_version;
-        drop(session.tx_in);
-        let task_handle = session.task_handle.ok_or("no task handle")?;
-
-        let ks_bytes = get_runtime().block_on(task_handle)
-            .map_err(|e| format!("key_refresh task join error: {e}"))?
-            .map_err(|e| format!("key_refresh protocol error: {e}"))?;
-
-        let (address, pubkey_hex, _) = extract_pubkey_and_address(&ks_bytes)?;
-        let completed = RecoveryCompletedPayload {
-            mpc_key_id: session_id.clone(),
-            address,
-            public_key: pubkey_hex,
-            rotation_version: rv + 1,
-            local_encrypted_share: BASE64_STANDARD.encode(&ks_bytes),
-        };
-        return make_completed(0, serde_json::to_string(&completed).map_err(|e| e.to_string())?);
-    }
-
-    let (server_env, server_msgs) = parse_server_envelope(&server_payload)?;
+    let (server_env, server_msg_bytes) = parse_server_envelope(&server_payload)?;
 
     if round == 1 {
         let bs = backup_share.ok_or("backup_share required for round 1")?;
@@ -301,9 +256,10 @@ pub fn recover(
                 .map_err(|e| e.to_string())
         });
 
-        inject_all(&tx_in, server_msgs)?;
+        get_runtime().block_on(tx_in.send(server_msg_bytes))
+            .map_err(|e| format!("failed to send initial server msg: {e}"))?;
 
-        let client_msgs = collect_all(&mut rx_out)
+        let client_msg = get_runtime().block_on(rx_out.recv())
             .ok_or_else(|| "key_refresh task closed before producing first message".to_string())?;
 
         RECOVERY_SESSIONS.lock().unwrap().insert(session_id.clone(), RecoverySession {
@@ -311,10 +267,10 @@ pub fn recover(
             created_at: Instant::now(), current_rotation_version: rv,
         });
 
-        return make_in_progress_batch(&session_id, ProtocolType::Rotation, server_env.round, &client_msgs);
+        return make_in_progress(&session_id, ProtocolType::Rotation, server_env.round, &client_msg);
     }
 
-    // round > 1: TTL check + 批量注入收集
+    // round > 1: TTL check + 推进
     let (tx_in, rotation_version) = {
         let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
         match sessions.get(&session_id) {
@@ -327,17 +283,18 @@ pub fn recover(
         }
     };
 
-    inject_all(&tx_in, server_msgs)?;
+    get_runtime().block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send server msg: {e}"))?;
 
-    let next_msgs = {
+    let next_msg = {
         let mut sessions = RECOVERY_SESSIONS.lock().unwrap();
         let session = sessions.get_mut(&session_id)
             .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
-        collect_all(&mut session.rx_out)
+        get_runtime().block_on(session.rx_out.recv())
     };
 
-    match next_msgs {
-        Some(client_msgs) => make_in_progress_batch(&session_id, ProtocolType::Rotation, server_env.round, &client_msgs),
+    match next_msg {
+        Some(client_msg) => make_in_progress(&session_id, ProtocolType::Rotation, server_env.round, &client_msg),
         None => {
             let task_handle = RECOVERY_SESSIONS.lock().unwrap()
                 .remove(&session_id)
@@ -372,7 +329,7 @@ pub fn sign(
     share: Option<String>,
     message_hash_hex: Option<String>,
 ) -> Result<String, String> {
-    let (server_env, server_msgs) = parse_server_envelope(&server_payload)?;
+    let (server_env, server_msg_bytes) = parse_server_envelope(&server_payload)?;
 
     if round == 1 {
         let share_b64 = share.ok_or("share required for round 1")?;
@@ -418,9 +375,10 @@ pub fn sign(
                 .map_err(|e| e.to_string())
         });
 
-        inject_all(&tx_in, server_msgs)?;
+        get_runtime().block_on(tx_in.send(server_msg_bytes))
+            .map_err(|e| format!("failed to send initial server msg: {e}"))?;
 
-        let client_msgs = collect_all(&mut rx_out)
+        let client_msg = get_runtime().block_on(rx_out.recv())
             .ok_or_else(|| "sign task closed before producing first message".to_string())?;
 
         SIGN_SESSIONS.lock().unwrap().insert(session_id.clone(), SignSession {
@@ -428,10 +386,10 @@ pub fn sign(
             digest, consumed: false, public_key_hex: pk_hex,
         });
 
-        return make_in_progress_batch(&session_id, ProtocolType::Dsg, server_env.round, &client_msgs);
+        return make_in_progress(&session_id, ProtocolType::Dsg, server_env.round, &client_msg);
     }
 
-    // round > 1: SEC-01 check + 批量注入收集
+    // round > 1: SEC-01 check + 推进
     let tx_in = {
         let sessions = SIGN_SESSIONS.lock().unwrap();
         let session = sessions.get(&session_id)
@@ -442,22 +400,24 @@ pub fn sign(
         session.tx_in.clone()
     };
 
-    inject_all(&tx_in, server_msgs)?;
+    get_runtime().block_on(tx_in.send(server_msg_bytes))
+        .map_err(|e| format!("failed to send server msg: {e}"))?;
 
-    let next_msgs = {
+    let next_msg = {
         let mut sessions = SIGN_SESSIONS.lock().unwrap();
         let session = sessions.get_mut(&session_id)
             .ok_or_else(|| format!("sign session not found: {session_id}"))?;
         session.consumed = true;
-        collect_all(&mut session.rx_out)
+        get_runtime().block_on(session.rx_out.recv())
     };
 
-    match next_msgs {
-        Some(client_msgs) => {
+    match next_msg {
+        Some(client_msg) => {
+            // 中间轮次 — 重置 consumed
             if let Some(session) = SIGN_SESSIONS.lock().unwrap().get_mut(&session_id) {
                 session.consumed = false;
             }
-            make_in_progress_batch(&session_id, ProtocolType::Dsg, server_env.round, &client_msgs)
+            make_in_progress(&session_id, ProtocolType::Dsg, server_env.round, &client_msg)
         }
         None => {
             let task_handle = SIGN_SESSIONS.lock().unwrap()

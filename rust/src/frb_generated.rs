@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1485300743;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2003024160;
 
 // Section: executor
 
@@ -519,40 +519,6 @@ fn wire__crate__api__mpc_engine__sign_impl(
         },
     )
 }
-fn wire__crate__api__types__wire_envelope_decode_all_payloads_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "wire_envelope_decode_all_payloads",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <crate::api::types::WireEnvelope>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::types::WireEnvelope::decode_all_payloads(&api_that)?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
 fn wire__crate__api__types__wire_envelope_new_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -600,52 +566,6 @@ fn wire__crate__api__types__wire_envelope_new_impl(
         },
     )
 }
-fn wire__crate__api__types__wire_envelope_new_batch_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "wire_envelope_new_batch",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_session_id = <String>::sse_decode(&mut deserializer);
-            let api_protocol = <crate::api::types::ProtocolType>::sse_decode(&mut deserializer);
-            let api_round = <u8>::sse_decode(&mut deserializer);
-            let api_from_id = <u8>::sse_decode(&mut deserializer);
-            let api_to_id = <Option<u8>>::sse_decode(&mut deserializer);
-            let api_payloads = <Vec<String>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok =
-                        Result::<_, ()>::Ok(crate::api::types::WireEnvelope::new_batch(
-                            api_session_id,
-                            api_protocol,
-                            api_round,
-                            api_from_id,
-                            api_to_id,
-                            api_payloads,
-                        ))?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
 
 // Section: dart2rust
 
@@ -661,30 +581,6 @@ impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i32::<NativeEndian>().unwrap()
-    }
-}
-
-impl SseDecode for Vec<String> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = Vec::with_capacity(len_ as usize);
-        for idx_ in 0..len_ {
-            ans_.push(<String>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
-impl SseDecode for Vec<Vec<u8>> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = Vec::with_capacity(len_ as usize);
-        for idx_ in 0..len_ {
-            ans_.push(<Vec<u8>>::sse_decode(deserializer));
-        }
-        return ans_;
     }
 }
 
@@ -741,17 +637,6 @@ impl SseDecode for Option<u8> {
     }
 }
 
-impl SseDecode for Option<Vec<String>> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<Vec<String>>::sse_decode(deserializer));
-        } else {
-            return None;
-        }
-    }
-}
-
 impl SseDecode for crate::api::types::ProtocolType {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -795,7 +680,6 @@ impl SseDecode for crate::api::types::WireEnvelope {
         let mut var_toId = <Option<u8>>::sse_decode(deserializer);
         let mut var_payloadEncoding = <String>::sse_decode(deserializer);
         let mut var_payload = <String>::sse_decode(deserializer);
-        let mut var_payloads = <Option<Vec<String>>>::sse_decode(deserializer);
         let mut var_step = <Option<String>>::sse_decode(deserializer);
         return crate::api::types::WireEnvelope {
             session_id: var_sessionId,
@@ -805,7 +689,6 @@ impl SseDecode for crate::api::types::WireEnvelope {
             to_id: var_toId,
             payload_encoding: var_payloadEncoding,
             payload: var_payload,
-            payloads: var_payloads,
             step: var_step,
         };
     }
@@ -860,16 +743,7 @@ fn pde_ffi_dispatcher_primary_impl(
         11 => wire__crate__api__types__message_digest_new_impl(port, ptr, rust_vec_len, data_len),
         12 => wire__crate__api__mpc_engine__recover_impl(port, ptr, rust_vec_len, data_len),
         13 => wire__crate__api__mpc_engine__sign_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__types__wire_envelope_decode_all_payloads_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        15 => wire__crate__api__types__wire_envelope_new_impl(port, ptr, rust_vec_len, data_len),
-        16 => {
-            wire__crate__api__types__wire_envelope_new_batch_impl(port, ptr, rust_vec_len, data_len)
-        }
+        14 => wire__crate__api__types__wire_envelope_new_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -939,7 +813,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::WireEnvelope {
             self.to_id.into_into_dart().into_dart(),
             self.payload_encoding.into_into_dart().into_dart(),
             self.payload.into_into_dart().into_dart(),
-            self.payloads.into_into_dart().into_dart(),
             self.step.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -968,26 +841,6 @@ impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
-    }
-}
-
-impl SseEncode for Vec<String> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <String>::sse_encode(item, serializer);
-        }
-    }
-}
-
-impl SseEncode for Vec<Vec<u8>> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <Vec<u8>>::sse_encode(item, serializer);
-        }
     }
 }
 
@@ -1034,16 +887,6 @@ impl SseEncode for Option<u8> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <u8>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<Vec<String>> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <Vec<String>>::sse_encode(value, serializer);
         }
     }
 }
@@ -1100,7 +943,6 @@ impl SseEncode for crate::api::types::WireEnvelope {
         <Option<u8>>::sse_encode(self.to_id, serializer);
         <String>::sse_encode(self.payload_encoding, serializer);
         <String>::sse_encode(self.payload, serializer);
-        <Option<Vec<String>>>::sse_encode(self.payloads, serializer);
         <Option<String>>::sse_encode(self.step, serializer);
     }
 }

@@ -1,16 +1,54 @@
 # ceres_mpc_example
 
-A new Flutter project.
+Example Flutter app for the `ceres_mpc` SDK.
 
-## Getting Started
+## What It Shows
 
-This project is a starting point for a Flutter application.
+- `MockMpcTransport` for a fully runnable local demo with no backend
+- `HttpMpcTransport` as the JSON-RPC over HTTP reference implementation
+- `WebSocketMpcTransport` as the persistent transport option for lower round-trip overhead
 
-A few resources to get you started if this is your first Flutter project:
+The app keeps transport injection explicit, so changing network mode is just a constructor swap.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Running The Example
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+cd example
+flutter pub get
+flutter run
+```
+
+## Transport Modes
+
+### Mock
+
+Use this when you want to explore the UI and protocol flow without a live MPC server.
+
+### HTTP
+
+Update the RPC URL in the app, then wire `HttpMpcTransport` to your backend:
+
+```dart
+final client = MpcClient(
+  engine: MpcEngine(RustLib.instance.api),
+  transport: HttpMpcTransport(
+    rpcUrl: 'https://your-mpc-server.com/rpc',
+  ),
+);
+```
+
+### WebSocket
+
+Use the WebSocket transport when your server exposes a persistent JSON-RPC endpoint:
+
+```dart
+final client = MpcClient(
+  engine: MpcEngine(RustLib.instance.api),
+  transport: WebSocketMpcTransport(
+    wsUrl: 'ws://your-mpc-server.com/ws',
+    timeout: const Duration(seconds: 30),
+  ),
+);
+```
+
+`WebSocketMpcTransport` connects lazily on first `send()`, matches responses by JSON-RPC `id`, and reconnects on the next request after disconnect.

@@ -4,7 +4,7 @@ import 'package:async/async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../lib/ws_transport_example.dart';
+import 'package:ceres_mpc_example/ws_transport_example.dart';
 
 // ── Fake WebSocket helpers ────────────────────────────────────────
 

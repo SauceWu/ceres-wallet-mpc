@@ -243,8 +243,8 @@ Plans:
 
 ## Phases
 
-- [ ] **Phase 14: WebSocket Transport 实现** - 新增 WebSocketMpcTransport 类，实现 MpcTransport 接口，支持自动连接、断线重连、JSON-RPC id 请求-响应匹配及超时/错误处理
-- [ ] **Phase 15: Example App 集成与文档** - Example app 展示 HTTP 和 WebSocket 双 transport 用法，更新 README/README_CN，CI 验证全通过
+- [x] **Phase 14: WebSocket Transport 实现** - 新增 WebSocketMpcTransport 类，实现 MpcTransport 接口，支持自动连接、断线重连、JSON-RPC id 请求-响应匹配及超时/错误处理 (completed 2026-04-09)
+- [x] **Phase 15: Example App 集成与文档** - Example app 展示 HTTP 和 WebSocket 双 transport 用法，更新 README/README_CN，CI 验证全通过 (completed 2026-04-09)
 
 ## Phase Details
 
@@ -261,7 +261,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 14-01-PLAN.md — WebSocketMpcTransport 实现 + web_socket_channel 依赖 + 单元测试（send 匹配、并发、重连、超时）
+- [x] 14-01-PLAN.md — WebSocketMpcTransport 实现 + web_socket_channel 依赖 + 单元测试（send 匹配、并发、重连、超时）
 
 ### Phase 15: Example App 集成与文档
 **Goal**: 开发者可以通过 example app 和 README 快速理解并切换 HTTP / WebSocket 两种 transport
@@ -271,7 +271,10 @@ Plans:
   1. Example app 包含两种 transport 用法的可运行示例，切换 transport 只需替换一个构造参数
   2. README 和 README_CN 均包含 WebSocket transport 的接入说明（安装、初始化、配置超时）
   3. `flutter analyze` 无 error，`flutter test` 全部通过
-**Plans**: TBD
+**Plans**: 1 plan
+ 
+Plans:
+- [x] 15-01-PLAN.md — Example app transport 切换 UI + README/README_CN/example README WebSocket 集成说明 + example analyze/test 校验 (INTEG-01, INTEG-02, INTEG-03)
 **UI hint**: yes
 
 ## Progress Table
@@ -286,5 +289,5 @@ Plans:
 | 12. Backup Envelope 与 Key Export | 2/2 | Complete    | 2026-04-09 |
 | 13. FRB Codegen + Dart 层适配 + CI 门控 | 2/2 | Complete    | 2026-04-09 |
 | 13.1. sl-dkls23 迁移 | 4/4 | Complete    | 2026-04-09 |
-| 14. WebSocket Transport 实现 | 0/2 | Not started | - |
-| 15. Example App 集成与文档 | 0/2 | Not started | - |
+| 14. WebSocket Transport 实现 | 1/1 | Complete | 2026-04-09 |
+| 15. Example App 集成与文档 | 1/1 | Complete | 2026-04-09 |

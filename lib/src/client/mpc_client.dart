@@ -75,25 +75,6 @@ class MpcClient {
       return KeygenResult.fromJson(_snakeToCamelKeys(payload));
     }
 
-    // Engine returned continue but has a clientPayload — send it so server can complete too
-    if (currentResult.isContinue && currentResult.clientPayload != null) {
-      // Send the last batch to server (fire-and-forget so server stores keyshare)
-      await _rpcCall(MpcMethod.keygen, {
-        'sessionId': sessionId,
-        'round': round,
-        'clientPayload': currentResult.clientPayload,
-      }).catchError((_) => <String, dynamic>{});
-
-      // Now collect from engine
-      currentResult = await _engine.keygen(sessionId, 0, '');
-      _checkProtocolError(currentResult);
-      if (currentResult.isCompleted && currentResult.clientPayload != null) {
-        final payload =
-            jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
-        return KeygenResult.fromJson(_snakeToCamelKeys(payload));
-      }
-    }
-
     throw MpcProtocolException(
         'Unexpected keygen state: ${currentResult.status}');
   }
@@ -174,45 +155,6 @@ class MpcClient {
       return result;
     }
 
-    // Engine still continue — send last batch to server so it stores new keyshare
-    if (currentResult.isContinue && currentResult.clientPayload != null) {
-      await _rpcCall(MpcMethod.recovery, {
-        'sessionId': sessionId,
-        'round': round,
-        'clientPayload': currentResult.clientPayload,
-      }).catchError((_) => <String, dynamic>{});
-
-      currentResult = await _engine.recover(sessionId, 0, '');
-      _checkProtocolError(currentResult);
-      if (currentResult.isCompleted && currentResult.clientPayload != null) {
-        final payload =
-            jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
-        var result = RecoveryResult.fromJson(_snakeToCamelKeys(payload));
-
-        if (newUserBackupSecret != null) {
-          final envelope = await _engine.deriveBackupEnvelope(
-            result.localEncryptedShare,
-            newUserBackupSecret,
-            DateTime.now().toUtc().toIso8601String(),
-          );
-          result = RecoveryResult(
-            mpcKeyId: result.mpcKeyId,
-            address: result.address,
-            publicKey: result.publicKey,
-            rotationVersion: result.rotationVersion,
-            localEncryptedShare: result.localEncryptedShare,
-            encryptedBackupShare: jsonEncode({
-              'version': envelope.version,
-              'algorithm': envelope.algorithm,
-              'created_at': envelope.createdAt,
-              'payload': envelope.payload,
-            }),
-          );
-        }
-        return result;
-      }
-    }
-
     throw MpcProtocolException(
         'Unexpected recovery state: ${currentResult.status}');
   }
@@ -267,18 +209,6 @@ class MpcClient {
       final payload =
           jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
       return SignResult.fromJson(payload);
-    }
-
-    // Engine still continue — send last batch to server, server returns (r,s,recid)
-    if (currentResult.isContinue && currentResult.clientPayload != null) {
-      final serverData = await _rpcCall(MpcMethod.sign, {
-        'sessionId': sessionId,
-        'round': round,
-        'clientPayload': currentResult.clientPayload,
-      });
-      if (serverData['status'] == 'completed' && serverData['r'] != null) {
-        return SignResult.fromJson(serverData);
-      }
     }
 
     throw MpcProtocolException(

@@ -9,17 +9,17 @@ Requirements for milestone v3.0 Transport Optimization. Each maps to roadmap pha
 
 ### Transport
 
-- [ ] **TRANS-01**: 新增 WebSocket transport 实现，通过 `web_socket_channel` 建立持久连接
-- [ ] **TRANS-02**: WebSocket 自动连接管理（首次 send 时连接，断线自动重连）
-- [ ] **TRANS-03**: 请求-响应匹配（通过 JSON-RPC `id` 字段，支持并发 session）
-- [ ] **TRANS-04**: 连接超时和错误处理（超时抛出异常，WS 关闭码处理）
-- [ ] **TRANS-05**: HTTP transport 保持不变，两种模式并存
+- [x] **TRANS-01**: 新增 WebSocket transport 实现，通过 `web_socket_channel` 建立持久连接
+- [x] **TRANS-02**: WebSocket 自动连接管理（首次 send 时连接，断线自动重连）
+- [x] **TRANS-03**: 请求-响应匹配（通过 JSON-RPC `id` 字段，支持并发 session）
+- [x] **TRANS-04**: 连接超时和错误处理（超时抛出异常，WS 关闭码处理）
+- [x] **TRANS-05**: HTTP transport 保持不变，两种模式并存
 
 ### Integration
 
-- [ ] **INTEG-01**: Example app 展示 HTTP 和 WebSocket 两种 transport 用法
-- [ ] **INTEG-02**: README/README_CN 增加 WebSocket transport 使用说明
-- [ ] **INTEG-03**: flutter analyze 无 error，flutter test 全部通过
+- [x] **INTEG-01**: Example app 展示 HTTP 和 WebSocket 两种 transport 用法
+- [x] **INTEG-02**: README/README_CN 增加 WebSocket transport 使用说明
+- [x] **INTEG-03**: flutter analyze 无 error，flutter test 全部通过
 
 ## Future Requirements
 
@@ -50,14 +50,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRANS-01 | Phase 14 | Pending |
-| TRANS-02 | Phase 14 | Pending |
-| TRANS-03 | Phase 14 | Pending |
-| TRANS-04 | Phase 14 | Pending |
-| TRANS-05 | Phase 14 | Pending |
-| INTEG-01 | Phase 15 | Pending |
-| INTEG-02 | Phase 15 | Pending |
-| INTEG-03 | Phase 15 | Pending |
+| TRANS-01 | Phase 14 | Complete |
+| TRANS-02 | Phase 14 | Complete |
+| TRANS-03 | Phase 14 | Complete |
+| TRANS-04 | Phase 14 | Complete |
+| TRANS-05 | Phase 14 | Complete |
+| INTEG-01 | Phase 15 | Complete |
+| INTEG-02 | Phase 15 | Complete |
+| INTEG-03 | Phase 15 | Complete |
 
 **Coverage:**
 - v3.0 requirements: 8 total
