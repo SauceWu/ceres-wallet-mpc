@@ -154,24 +154,24 @@ rust/
 ```
 客户端 (Party2)                      服务端 (Party1)
      |                                  |
-     |  RPC keygen_start                |
+     |  RPC keygen (round=1)             |
      |--------------------------------->|
      |  { sessionId, WireEnvelope R1 }  |  DKG 第 1 轮
      |<---------------------------------|
      |                                  |
-     |  [Rust] keygen_start()           |
+     |  [Rust] keygen()                 |
      |                                  |
-     |  RPC keygen_continue (R2)        |
+     |  RPC keygen (round=2)            |
      |--------------------------------->|
      |  { WireEnvelope R2 }             |
      |<---------------------------------|
      |                                  |
-     |  RPC keygen_continue (R3)        |
+     |  RPC keygen (round=3)            |
      |--------------------------------->|
      |  { WireEnvelope R3 }             |
      |<---------------------------------|
      |                                  |
-     |  RPC keygen_continue (R4 最终)    |
+     |  RPC keygen (round=4, 最终)       |
      |--------------------------------->|
      |  { status: completed }           |  -> Keyshare
      |<---------------------------------|
@@ -179,7 +179,7 @@ rust/
      v  KeygenResult                    v
 ```
 
-Recovery 和 Sign 遵循相同的 4 轮模式（start + 3 次 continue）。
+Recovery 和 Sign 遵循相同的 4 轮模式（round=1 创建会话，round 2-4 推进协议）。
 
 > **提示：** 使用 `WebSocketMpcTransport` 保持持久连接 — 避免每次往返的 TCP 握手开销。
 

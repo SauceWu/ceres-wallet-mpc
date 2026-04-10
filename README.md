@@ -135,24 +135,24 @@ rust/
 ```
 Client (Party2)                    Server (Party1)
      |                                  |
-     |  RPC keygen_start                |
+     |  RPC keygen (round=1)             |
      |--------------------------------->|
      |  { sessionId, WireEnvelope R1 }  |  DKG Round 1
      |<---------------------------------|
      |                                  |
-     |  [Rust] keygen_start()           |
+     |  [Rust] keygen()                 |
      |                                  |
-     |  RPC keygen_continue (R2)        |
+     |  RPC keygen (round=2)            |
      |--------------------------------->|
      |  { WireEnvelope R2 }             |
      |<---------------------------------|
      |                                  |
-     |  RPC keygen_continue (R3)        |
+     |  RPC keygen (round=3)            |
      |--------------------------------->|
      |  { WireEnvelope R3 }             |
      |<---------------------------------|
      |                                  |
-     |  RPC keygen_continue (R4 final)  |
+     |  RPC keygen (round=4, final)     |
      |--------------------------------->|
      |  { status: completed }           |  -> Keyshare
      |<---------------------------------|
@@ -160,7 +160,7 @@ Client (Party2)                    Server (Party1)
      v  KeygenResult                    v
 ```
 
-Recovery and Sign follow the same 4-round pattern (start + 3 continues).
+Recovery and Sign follow the same 4-round pattern (round=1 creates session, rounds 2-4 advance).
 
 > **Tip:** Use `WebSocketMpcTransport` to keep a persistent connection — avoids TCP handshake overhead on each round-trip.
 
