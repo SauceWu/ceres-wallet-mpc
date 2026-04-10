@@ -1,6 +1,7 @@
 # ceres_mpc
 
 [![License](https://img.shields.io/github/license/SauceWu/ceres-mpc)](https://github.com/SauceWu/ceres-mpc/blob/main/LICENSE)
+[![pub package](https://img.shields.io/pub/v/ceres_mpc.svg)](https://pub.dev/packages/ceres_mpc)
 [![Server Demo](https://img.shields.io/badge/server-demo-blue)](https://github.com/SauceWu/ceres-mpc-server-demo)
 [![Platform](https://img.shields.io/badge/platform-flutter%20ffi-02569B)](https://flutter.dev)
 
@@ -27,6 +28,7 @@
 ## 发布状态
 
 - 源码仓库: [SauceWu/ceres-mpc](https://github.com/SauceWu/ceres-mpc)
+- pub.dev 包: [ceres_mpc](https://pub.dev/packages/ceres_mpc)
 - 服务端示例: [SauceWu/ceres-mpc-server-demo](https://github.com/SauceWu/ceres-mpc-server-demo)
 - 分发方式: `pub.dev` 包 + GitHub Releases 预编译原生产物，由 `cargokit` 自动接入
 - 开源协议: MIT

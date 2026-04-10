@@ -1,6 +1,7 @@
 # ceres_mpc
 
 [![License](https://img.shields.io/github/license/SauceWu/ceres-mpc)](https://github.com/SauceWu/ceres-mpc/blob/main/LICENSE)
+[![pub package](https://img.shields.io/pub/v/ceres_mpc.svg)](https://pub.dev/packages/ceres_mpc)
 [![Server Demo](https://img.shields.io/badge/server-demo-blue)](https://github.com/SauceWu/ceres-mpc-server-demo)
 [![Platform](https://img.shields.io/badge/platform-flutter%20ffi-02569B)](https://flutter.dev)
 
@@ -27,6 +28,7 @@ Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) (DKLs23 pro
 ## Release Status
 
 - Source repo: [SauceWu/ceres-mpc](https://github.com/SauceWu/ceres-mpc)
+- pub.dev package: [ceres_mpc](https://pub.dev/packages/ceres_mpc)
 - Server demo: [SauceWu/ceres-mpc-server-demo](https://github.com/SauceWu/ceres-mpc-server-demo)
 - Distribution model: `pub.dev` package + GitHub Releases precompiled native artifacts via `cargokit`
 - License: MIT
