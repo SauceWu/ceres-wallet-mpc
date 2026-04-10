@@ -34,7 +34,8 @@ class MpcRoundResult {
       };
 
   bool get isContinue => status == 'continue';
-  bool get isCompleted => status == 'completed';
+  bool get isCompleted => status == 'completed' || status == 'completed_with_message';
+  bool get isCompletedWithMessage => status == 'completed_with_message';
   bool get isError => status == 'error';
 
   @override

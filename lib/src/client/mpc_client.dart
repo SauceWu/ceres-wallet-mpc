@@ -72,6 +72,22 @@ class MpcClient {
       round++;
     }
 
+    if (currentResult.isCompletedWithMessage && currentResult.clientPayload != null) {
+      // Engine completed but has one last message to send to server
+      final wrapped = jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
+      final envelope = jsonEncode(wrapped['envelope']);
+      final result = wrapped['result'] as Map<String, dynamic>;
+
+      // Fire-and-forget: send last client message to server so it can finish too
+      await _rpcCall(MpcMethod.keygen, {
+        'sessionId': sessionId,
+        'round': round,
+        'clientPayload': envelope,
+      }).catchError((_) => <String, dynamic>{}); // Server may return completed, ignore
+
+      return KeygenResult.fromJson(_snakeToCamelKeys(result));
+    }
+
     if (currentResult.isCompleted && currentResult.clientPayload != null) {
       final payload =
           jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;

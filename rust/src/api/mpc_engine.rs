@@ -158,7 +158,56 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
     };
 
     match next_msg {
-        Some(client_msg) => make_in_progress(&session_id, ProtocolType::Dkg, server_env.round, &client_msg),
+        Some(client_msg) => {
+            // Check if the protocol task has also finished (this was the last message)
+            let task_finished = KEYGEN_SESSIONS.lock().unwrap()
+                .get(&session_id)
+                .and_then(|s| s.task_handle.as_ref().map(|h| h.is_finished()))
+                .unwrap_or(false);
+
+            if task_finished {
+                // Last message + task done → return completed with keyshare AND the message
+                let session = KEYGEN_SESSIONS.lock().unwrap().remove(&session_id)
+                    .ok_or("keygen session not found")?;
+                let task_handle = session.task_handle.ok_or("no task handle")?;
+
+                let ks_bytes = get_runtime().block_on(task_handle)
+                    .map_err(|e| format!("keygen task join error: {e}"))?
+                    .map_err(|e| format!("keygen protocol error: {e}"))?;
+
+                let (address, pubkey_hex, _) = extract_pubkey_and_address(&ks_bytes)?;
+
+                // Build completed response — include the last client_msg so Dart can forward it
+                let completed = KeygenCompletedPayload {
+                    mpc_key_id: session_id.clone(),
+                    address,
+                    public_key: pubkey_hex,
+                    curve: "secp256k1".to_string(),
+                    threshold: 2,
+                    key_ref: session_id.clone(),
+                    backup_state: "none".to_string(),
+                    rotation_version: 1,
+                    local_encrypted_share: BASE64_STANDARD.encode(&ks_bytes),
+                };
+                let completed_json = serde_json::to_string(&completed).map_err(|e| e.to_string())?;
+
+                // Return completed but also include client_msg as envelope for the last server call
+                let client_b64 = BASE64_STANDARD.encode(&client_msg);
+                let env = WireEnvelope::new(session_id.to_string(), ProtocolType::Dkg, server_env.round, 0, Some(1), client_b64, None);
+                let env_json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+
+                // Use a special status: completed_with_message — Dart sends the message then returns result
+                let result = MpcRoundResult {
+                    status: "completed_with_message".to_string(),
+                    round: server_env.round as i32,
+                    client_payload: Some(format!("{{\"envelope\":{},\"result\":{}}}", env_json, completed_json)),
+                    error_message: None,
+                };
+                return serde_json::to_string(&result).map_err(|e| e.to_string());
+            }
+
+            make_in_progress(&session_id, ProtocolType::Dkg, server_env.round, &client_msg)
+        }
         None => {
             let task_handle = KEYGEN_SESSIONS.lock().unwrap()
                 .remove(&session_id)
