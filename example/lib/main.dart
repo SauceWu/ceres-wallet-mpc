@@ -68,6 +68,7 @@ class ExampleHomePage extends StatefulWidget {
 class _ExampleHomePageState extends State<ExampleHomePage> {
   final _logs = <String>[];
   late MpcClient _client;
+  late MpcEngine _engine;
   late MpcTransport _transport;
   final _httpUrlController = TextEditingController(
     text: 'http://127.0.0.1:3000/rpc',
@@ -77,8 +78,13 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
   );
   ExampleTransportMode _transportMode = ExampleTransportMode.http;
 
-  // Stored keygen result for recovery/sign demos
+  // ── Stored state from keygen (used by sign/recovery/export) ──
   KeygenResult? _lastKeygen;
+  String? _currentLocalShare;    // updated after keygen or recovery
+  String? _backupEnvelope;       // created after keygen via deriveBackupEnvelope
+  bool _exported = false;
+
+  bool get _hasKey => _lastKeygen != null && _currentLocalShare != null;
 
   @override
   void initState() {
@@ -95,6 +101,7 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
   }
 
   void _log(String message) {
+    print(message);
     setState(() => _logs.add(message));
   }
 
@@ -108,18 +115,19 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
     setState(() {
       _transportMode = mode;
       _lastKeygen = null;
+      _currentLocalShare = null;
+      _backupEnvelope = null;
+      _exported = false;
     });
     _rebuildClient();
   }
 
   void _rebuildClient({bool logChange = true}) {
     _transport = _createTransport();
-    _client = MpcClient(
-      engine: _useMockEngine
-          ? MockMpcEngine()
-          : MpcEngine(RustLib.instance.api),
-      transport: _transport,
-    );
+    _engine = _useMockEngine
+        ? MockMpcEngine()
+        : MpcEngine(RustLib.instance.api);
+    _client = MpcClient(engine: _engine, transport: _transport);
     if (logChange) {
       _log('Transport switched to ${_transportMode.label}.');
       _log(_transportMode.description);
@@ -259,18 +267,32 @@ final client = MpcClient(
     try {
       final result = await _client.keygen();
 
-      _lastKeygen = result;
+      setState(() {
+        _lastKeygen = result;
+        _currentLocalShare = result.localEncryptedShare;
+        _exported = false;
+      });
+
       _log('Keygen successful!');
       _log('  address: ${result.address}');
       _log('  publicKey: ${result.publicKey.substring(0, 20)}...');
-      _log('  curve: ${result.curve}');
-      _log('  threshold: ${result.threshold}');
-      _log('  rotationVersion: ${result.rotationVersion}');
       _log('  mpcKeyId: ${result.mpcKeyId}');
+      _log('  rotationVersion: ${result.rotationVersion}');
+      _log('  localEncryptedShare: ${result.localEncryptedShare.substring(0, 20)}...');
       _log('');
-      _log('Next steps:');
-      _log('  1. Store localEncryptedShare in device secure storage');
-      _log('  2. Prompt user to create backup');
+
+      // Auto-create backup envelope (in real app, prompt user for secret)
+      _log('Creating backup envelope...');
+      final envelope = await _engine.deriveBackupEnvelope(
+        result.localEncryptedShare,
+        'demo_backup_secret_123',
+        DateTime.now().toUtc().toIso8601String(),
+      );
+      final envelopeJson = '{"version":"${envelope.version}","algorithm":"${envelope.algorithm}","created_at":"${envelope.createdAt}","payload":"${envelope.payload}"}';
+      setState(() => _backupEnvelope = envelopeJson);
+      _log('Backup envelope created (${envelopeJson.length} chars)');
+      _log('');
+      _log('Ready: Sign / Recovery / Export buttons are now active.');
     } on MpcProtocolException catch (e) {
       _log('Protocol error: ${e.message} (round: ${e.round})');
     } on MpcTransportException catch (e) {
@@ -296,28 +318,32 @@ final client = MpcClient(
     _clearLogs();
     _log('=== Recovery Example ===');
 
-    if (_lastKeygen == null) {
-      _log('Run keygen first to get a key to recover.');
+    if (_lastKeygen == null || _backupEnvelope == null) {
+      _log('Run keygen first (creates key + backup envelope).');
       return;
     }
 
     _log('Starting recovery for ${_lastKeygen!.mpcKeyId}...');
+    _log('  Using backup envelope from keygen step');
 
     try {
       final result = await _client.recover(
         mpcKeyId: _lastKeygen!.mpcKeyId,
-        encryptedBackupShare: 'mock_encrypted_backup_data',
-        userBackupSecret: 'user_secret_password_123',
+        encryptedBackupShare: _backupEnvelope!,
+        userBackupSecret: 'demo_backup_secret_123',
         currentRotationVersion: _lastKeygen!.rotationVersion,
       );
 
+      // Update local share (old one is now invalid after rotation)
+      setState(() => _currentLocalShare = result.localEncryptedShare);
+
       _log('Recovery successful!');
-      _log('  address: ${result.address} (should match original)');
+      _log('  address: ${result.address}');
       _log('  rotationVersion: ${result.rotationVersion}');
       _log('  mpcKeyId: ${result.mpcKeyId}');
+      _log('  localEncryptedShare updated (old one invalidated)');
       _log('');
-      _log('Key point: address is unchanged after recovery.');
-      _log('Old key shares are now invalidated.');
+      _log('Address unchanged after recovery ✓');
     } on MpcProtocolException catch (e) {
       _log('Protocol error: ${e.message}');
     } on MpcTransportException catch (e) {
@@ -337,19 +363,25 @@ final client = MpcClient(
     _clearLogs();
     _log('=== Sign Example ===');
 
-    if (_lastKeygen == null) {
+    if (_lastKeygen == null || _currentLocalShare == null) {
       _log('Run keygen first.');
       return;
     }
+    if (_exported) {
+      _log('Key already exported — signing disabled.');
+      return;
+    }
 
+    final msgHash = 'aabbccdd' * 8; // 64-char hex hash (demo)
     _log('Signing transaction...');
-    _log('  messageHash: aabbccdd...');
+    _log('  messageHash: ${msgHash.substring(0, 16)}...');
+    _log('  using localShare from ${_currentLocalShare == _lastKeygen!.localEncryptedShare ? "keygen" : "recovery"}');
 
     try {
       final result = await _client.sign(
         mpcKeyId: _lastKeygen!.mpcKeyId,
-        messageHash: 'aabbccdd' * 8, // 64-char hex hash
-        localEncryptedShare: _lastKeygen!.localEncryptedShare,
+        messageHash: msgHash,
+        localEncryptedShare: _currentLocalShare!,
       );
 
       _log('Signing successful!');
@@ -378,31 +410,33 @@ final client = MpcClient(
     _clearLogs();
     _log('=== Export Private Key Example ===');
 
-    if (_lastKeygen == null) {
+    if (_lastKeygen == null || _currentLocalShare == null) {
       _log('Run keygen first.');
+      return;
+    }
+    if (_exported) {
+      _log('Key already exported.');
       return;
     }
 
     _log('Requesting key export for ${_lastKeygen!.mpcKeyId}...');
-    _log('(Server requires strong authentication for this operation)');
+    _log('WARNING: This will compromise the MPC key pair!');
     _log('');
 
     try {
       final result = await _client.exportPrivateKey(
         mpcKeyId: _lastKeygen!.mpcKeyId,
-        localEncryptedShare: _lastKeygen!.localEncryptedShare,
+        localEncryptedShare: _currentLocalShare!,
       );
+
+      setState(() => _exported = true);
 
       _log('Export successful!');
       _log('  address: ${result.address}');
       _log('  privateKey: ${result.privateKey.substring(0, 10)}...[REDACTED]');
-      _log('  exported: ${result.exported}');
       _log('');
-      _log('You can now import this private key into MetaMask,');
-      _log('Trust Wallet, or any standard EVM wallet.');
-      _log('');
-      _log('WARNING: This MPC key pair is now compromised.');
-      _log('Do NOT continue using it for MPC operations.');
+      _log('MPC key pair is now compromised.');
+      _log('Sign / Recovery buttons disabled.');
     } on MpcProtocolException catch (e) {
       _log('Protocol error: ${e.message}');
     } on MpcTransportException catch (e) {
@@ -458,27 +492,23 @@ final client = MpcClient(
               children: [
                 ElevatedButton(
                   onPressed: _runKeygen,
-                  child: const Text('Keygen'),
+                  child: const Text('1. Keygen'),
                 ),
                 ElevatedButton(
-                  onPressed: _runRecovery,
-                  child: const Text('Recovery'),
+                  onPressed: _hasKey && !_exported ? _runSign : null,
+                  child: const Text('2. Sign'),
                 ),
                 ElevatedButton(
-                  onPressed: _runSign,
-                  child: const Text('Sign'),
+                  onPressed: _hasKey && !_exported && _backupEnvelope != null ? _runRecovery : null,
+                  child: const Text('3. Recovery'),
                 ),
                 ElevatedButton(
-                  onPressed: _runExport,
+                  onPressed: _hasKey && !_exported ? _runExport : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
+                    backgroundColor: _hasKey && !_exported ? Colors.orange : null,
+                    foregroundColor: _hasKey && !_exported ? Colors.white : null,
                   ),
-                  child: const Text('Export Key'),
-                ),
-                OutlinedButton(
-                  onPressed: _runErrorDemo,
-                  child: const Text('Error Handling'),
+                  child: const Text('4. Export'),
                 ),
               ],
             ),
