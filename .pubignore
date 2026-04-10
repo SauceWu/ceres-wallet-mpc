@@ -1,4 +1,5 @@
 .DS_Store
+*.iml
 .claude/
 .fvm/
 .fvmrc
@@ -6,6 +7,15 @@
 .idea/
 .planning/
 .vscode/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
 build/
 rust/target/
+rust/.cargo/config.toml
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Runner/GeneratedPluginRegistrant.*
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 **/doc/api/
