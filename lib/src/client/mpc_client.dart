@@ -121,6 +121,9 @@ class MpcClient {
         );
         _checkProtocolError(currentResult);
       } else {
+        // Server completed — collect Keyshare from engine
+        currentResult = await _engine.recover(sessionId, 0, '');
+        _checkProtocolError(currentResult);
         break;
       }
       round++;
