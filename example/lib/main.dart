@@ -278,7 +278,7 @@ final client = MpcClient(
       _log('  publicKey: ${result.publicKey.substring(0, 20)}...');
       _log('  mpcKeyId: ${result.mpcKeyId}');
       _log('  rotationVersion: ${result.rotationVersion}');
-      _log('  localEncryptedShare: ${result.localEncryptedShare.substring(0, 20)}...');
+      _log('  localEncryptedShare: ${result.localEncryptedShare.length} chars');
       _log('');
 
       // Auto-create backup envelope (in real app, prompt user for secret)

@@ -44,7 +44,11 @@ class MpcClient {
     );
     _checkProtocolError(currentResult);
 
-    // Rounds 2+: continue until completed
+    // Rounds 2+: continue until client Rust engine reports completed.
+    // IMPORTANT: even if the server returns status=completed, we still
+    // need to feed that response to the Rust engine so it can extract
+    // the Keyshare and produce localEncryptedShare (which only exists
+    // on the client side).
     int round = 2;
     while (currentResult.isContinue) {
       final serverData = await _rpcCall(MpcMethod.keygen, {
@@ -53,14 +57,18 @@ class MpcClient {
         'clientPayload': currentResult.clientPayload,
       });
 
-      if (serverData['status'] == 'completed') {
-        return KeygenResult.fromJson(serverData);
+      // Always feed server response to engine — even if server says completed,
+      // the engine needs to process the final round to extract the Keyshare.
+      final serverPayload = serverData['serverPayload'];
+      if (serverPayload != null) {
+        currentResult = await _engine.keygen(
+          sessionId, round, jsonEncode(serverPayload),
+        );
+        _checkProtocolError(currentResult);
+      } else {
+        // Server completed without serverPayload — engine should also be done
+        break;
       }
-
-      currentResult = await _engine.keygen(
-        sessionId, round, jsonEncode(serverData['serverPayload']),
-      );
-      _checkProtocolError(currentResult);
       round++;
     }
 
@@ -109,14 +117,15 @@ class MpcClient {
         'clientPayload': currentResult.clientPayload,
       });
 
-      if (serverData['status'] == 'completed') {
-        return RecoveryResult.fromJson(serverData);
+      final serverPayload = serverData['serverPayload'];
+      if (serverPayload != null) {
+        currentResult = await _engine.recover(
+          sessionId, round, jsonEncode(serverPayload),
+        );
+        _checkProtocolError(currentResult);
+      } else {
+        break;
       }
-
-      currentResult = await _engine.recover(
-        sessionId, round, jsonEncode(serverData['serverPayload']),
-      );
-      _checkProtocolError(currentResult);
       round++;
     }
 
@@ -183,14 +192,19 @@ class MpcClient {
         'clientPayload': currentResult.clientPayload,
       });
 
-      if (serverData['status'] == 'completed') {
-        return SignResult.fromJson(serverData);
+      final serverPayload = serverData['serverPayload'];
+      if (serverPayload != null) {
+        currentResult = await _engine.sign(
+          sessionId, round, jsonEncode(serverPayload),
+        );
+        _checkProtocolError(currentResult);
+      } else {
+        // Server completed — check if it returned sign result directly
+        if (serverData['status'] == 'completed' && serverData['r'] != null) {
+          return SignResult.fromJson(serverData);
+        }
+        break;
       }
-
-      currentResult = await _engine.sign(
-        sessionId, round, jsonEncode(serverData['serverPayload'] ?? {}),
-      );
-      _checkProtocolError(currentResult);
       round++;
     }
 
