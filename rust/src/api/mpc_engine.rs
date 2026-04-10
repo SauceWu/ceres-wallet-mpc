@@ -241,7 +241,7 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
 
 // ── Recovery ─────────────────────────────────────────────────────────
 
-/// key_refresh 协议统一入口。round==1 需要 backup_share 和 current_rotation_version。
+/// key_refresh 协议统一入口。round==0 收集，round==1 创建，round>1 推进。
 pub fn recover(
     session_id: String,
     round: i32,
@@ -249,6 +249,29 @@ pub fn recover(
     backup_share: Option<String>,
     current_rotation_version: Option<i32>,
 ) -> Result<String, String> {
+    if round == 0 {
+        let session = RECOVERY_SESSIONS.lock().unwrap()
+            .remove(&session_id)
+            .ok_or_else(|| format!("recovery session not found: {session_id}"))?;
+        let rv = session.current_rotation_version;
+        drop(session.tx_in);
+        let task_handle = session.task_handle.ok_or("no task handle")?;
+
+        let ks_bytes = get_runtime().block_on(task_handle)
+            .map_err(|e| format!("key_refresh task join error: {e}"))?
+            .map_err(|e| format!("key_refresh protocol error: {e}"))?;
+
+        let (address, pubkey_hex, _) = extract_pubkey_and_address(&ks_bytes)?;
+        let completed = RecoveryCompletedPayload {
+            mpc_key_id: session_id.clone(),
+            address,
+            public_key: pubkey_hex,
+            rotation_version: rv + 1,
+            local_encrypted_share: BASE64_STANDARD.encode(&ks_bytes),
+        };
+        return make_completed(0, serde_json::to_string(&completed).map_err(|e| e.to_string())?);
+    }
+
     let (server_env, server_msgs) = parse_server_envelope(&server_payload)?;
 
     if round == 1 {
