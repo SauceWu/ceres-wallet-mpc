@@ -1,6 +1,6 @@
 name: ceres_mpc
 description: "Ceres MPC SDK — two-party ECDSA keygen, recovery, signing"
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/SauceWu/ceres-mpc
 repository: https://github.com/SauceWu/ceres-mpc
 issue_tracker: https://github.com/SauceWu/ceres-mpc/issues

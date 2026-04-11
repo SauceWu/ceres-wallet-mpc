@@ -25,15 +25,6 @@ Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) (DKLs23 pro
 
 > **Server-side implementation?** See [Server Integration Guide](doc/SERVER_INTEGRATION.md) and the runnable server demo at [SauceWu/ceres-mpc-server-demo](https://github.com/SauceWu/ceres-mpc-server-demo).
 
-## Release Status
-
-- Source repo: [SauceWu/ceres-mpc](https://github.com/SauceWu/ceres-mpc)
-- pub.dev package: [ceres_mpc](https://pub.dev/packages/ceres_mpc)
-- Server demo: [SauceWu/ceres-mpc-server-demo](https://github.com/SauceWu/ceres-mpc-server-demo)
-- Distribution model: `pub.dev` package + GitHub Releases precompiled native artifacts via `cargokit`
-- License: MIT
-- Before first publish: clean the git working tree, push a release tag, publish release artifacts, then run `dart pub publish`
-
 ## Architecture
 
 ```
@@ -70,7 +61,7 @@ Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) (DKLs23 pro
 
 ### Prerequisites
 
-- Flutter >= 1.17.0, Dart SDK >= 3.8.1
+- Flutter >= 3.32.0, Dart SDK >= 3.8.1
 - Rust toolchain only when you are developing this package locally, or when your target is not covered by the published precompiled artifacts
 
 ### Installation
@@ -229,14 +220,6 @@ dart pub publish --dry-run
 cd rust && cargo test
 ```
 
-## First Publish Checklist
-
-1. Commit the release-ready package metadata and docs.
-2. Push the repository to GitHub and verify the default branch is up to date.
-3. Create and push a tag such as `v0.1.0`.
-4. Confirm [`.github/workflows/precompile.yml`](.github/workflows/precompile.yml) uploads all required release artifacts.
-5. In a clean working tree, run `dart pub publish --dry-run`.
-6. Run the real `dart pub publish` once the release assets are available.
 
 ## Roadmap
 

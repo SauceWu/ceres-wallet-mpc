@@ -13,7 +13,7 @@ mod tests {
     #[test]
     fn test_channel_relay_conn_new() {
         let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(32);
-        let (tx_out, _rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_out, _rx_out) = mpsc::channel::<Vec<u8>>(64);
         let (conn, notify) = ChannelRelayConn::new(rx_in, tx_out);
         // conn 内部持有一个 clone，外部持有另一个 → strong_count >= 2
         assert!(Arc::strong_count(&notify) >= 2);
@@ -29,7 +29,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_batch_collect_simulated_round() {
         let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(32);
-        let (tx_out, rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>(64);
         let (conn, round_complete) = ChannelRelayConn::new(rx_in, tx_out);
 
         // spawn 模拟协议 task：
@@ -84,10 +84,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_batch_collect_protocol_complete() {
         let (_tx_in, rx_in) = mpsc::channel::<Vec<u8>>(32);
-        let (tx_out, rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>(64);
         let (conn, round_complete) = ChannelRelayConn::new(rx_in, tx_out);
 
-        // drop conn → conn 内的 tx (UnboundedSender 的唯一 clone) 被 drop → rx_out 关闭
+        // drop conn → conn 内的 tx (Sender 的唯一 clone) 被 drop → rx_out 关闭
         drop(conn);
 
         let result = tokio::task::spawn_blocking(move || {

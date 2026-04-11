@@ -176,7 +176,7 @@ async fn test_dsg_consumed_session_rejected() {
 
     // Create a dummy channel pair for the session (protocol never actually runs)
     let (tx_in, _rx_in) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
-    let (_tx_out, rx_out) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let (_tx_out, rx_out) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
 
     // Verify session does NOT exist before insertion
     {
@@ -246,7 +246,7 @@ async fn test_dsg_consumed_session_rejected() {
 fn sessions_insert_consumed(
     session_id: &str,
     tx_in: tokio::sync::mpsc::Sender<Vec<u8>>,
-    rx_out: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    rx_out: tokio::sync::mpsc::Receiver<Vec<u8>>,
     digest: ceres_mpc::api::types::MessageDigest,
 ) {
     use ceres_mpc::session::{SignSession, SIGN_SESSIONS};

@@ -89,7 +89,7 @@
 
 ### 环境要求
 
-- Flutter >= 1.17.0, Dart SDK >= 3.8.1
+- Flutter >= 3.32.0, Dart SDK >= 3.8.1
 - Rust 工具链仅在本地开发本包，或当前 target 未被已发布预编译产物覆盖时才需要
 
 ### 安装
@@ -247,15 +247,6 @@ dart pub publish --dry-run
 # Rust 单元测试（完整密码学协议）
 cd rust && cargo test
 ```
-
-## 首次发布检查清单
-
-1. 提交当前 package metadata、文档和发布相关修改。
-2. 推送仓库到 GitHub，并确认默认分支是最新状态。
-3. 创建并推送类似 `v0.1.0` 的 tag。
-4. 确认 [`.github/workflows/precompile.yml`](.github/workflows/precompile.yml) 已上传所需 release artifacts。
-5. 在干净工作区中执行 `dart pub publish --dry-run`。
-6. 确认 release assets 就绪后，再执行真正的 `dart pub publish`。
 
 ## 开发路线
 

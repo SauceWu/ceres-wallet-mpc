@@ -198,7 +198,7 @@ async fn test_session_ttl_eviction() {
 
     // Create dummy channels — the session will expire before any message is processed
     let (tx_in, _rx_in) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
-    let (_tx_out, rx_out) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let (_tx_out, rx_out) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
 
     // Create a RecoverySession with created_at backdated past TTL
     let expired_instant = Instant::now() - (SESSION_TTL + Duration::from_secs(1));

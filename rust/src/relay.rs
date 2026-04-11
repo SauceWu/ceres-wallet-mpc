@@ -16,14 +16,14 @@ use tokio::sync::{mpsc, Notify};
 ///   the current round have been sent.
 pub struct ChannelRelayConn {
     pub rx: mpsc::Receiver<Vec<u8>>,
-    pub tx: mpsc::UnboundedSender<Vec<u8>>,
+    pub tx: mpsc::Sender<Vec<u8>>,
     pub round_complete: Arc<Notify>,
 }
 
 impl ChannelRelayConn {
     /// Create a new ChannelRelayConn along with the shared Notify handle.
     /// The returned Arc<Notify> is used by collect_batch to detect round completion.
-    pub fn new(rx: mpsc::Receiver<Vec<u8>>, tx: mpsc::UnboundedSender<Vec<u8>>) -> (Self, Arc<Notify>) {
+    pub fn new(rx: mpsc::Receiver<Vec<u8>>, tx: mpsc::Sender<Vec<u8>>) -> (Self, Arc<Notify>) {
         let notify = Arc::new(Notify::new());
         let conn = Self { rx, tx, round_complete: notify.clone() };
         (conn, notify)
@@ -53,8 +53,8 @@ impl Sink<Vec<u8>> for ChannelRelayConn {
     }
 
     fn start_send(self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
-        // UnboundedSender never blocks; ignore send error (task dropped = protocol done)
-        self.get_mut().tx.send(item).map_err(|_| MessageSendError)
+        // Bounded channel (capacity=64): try_send returns Err if full or closed
+        self.get_mut().tx.try_send(item).map_err(|_| MessageSendError)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -66,7 +66,7 @@ impl Sink<Vec<u8>> for ChannelRelayConn {
     }
 }
 
-// ChannelRelayConn is Unpin because both mpsc::Receiver and mpsc::UnboundedSender are Unpin.
+// ChannelRelayConn is Unpin because both mpsc::Receiver and mpsc::Sender are Unpin.
 impl Unpin for ChannelRelayConn {}
 
 // Relay is a blanket trait alias: Stream<Item=Vec<u8>> + Sink<Vec<u8>, Error=MessageSendError> + Unpin
