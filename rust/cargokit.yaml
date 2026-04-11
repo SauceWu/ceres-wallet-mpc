@@ -13,5 +13,5 @@
 #   use_precompiled_binaries: false
 
 precompiled_binaries:
-  url_prefix: "https://github.com/SauceWu/ceres-mpc/releases/download/precompiled_"
+  url_prefix: "https://github.com/SauceWu/ceres-mpc/releases/download/"
   public_key: "606e900a7f55438f973db7d044303f796a44eb82e5217abbae56ed425ec599ea"
