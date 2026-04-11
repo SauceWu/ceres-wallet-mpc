@@ -9,7 +9,6 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 
 import 'builder.dart';
-import 'crate_hash.dart';
 import 'options.dart';
 import 'precompile_binaries.dart';
 import 'rustup.dart';
@@ -107,14 +106,11 @@ class ArtifactProvider {
       return {};
     }
 
-    final start = Stopwatch()..start();
-    final crateHash = CrateHash.compute(environment.manifestDir,
-        tempStorage: environment.targetTempDir);
-    _log.fine(
-        'Computed crate hash $crateHash in ${start.elapsedMilliseconds}ms');
+    final version = environment.crateInfo.packageVersion;
+    _log.fine('Using crate version $version for precompiled artifacts');
 
     final downloadedArtifactsDir =
-        path.join(environment.targetTempDir, 'precompiled', crateHash);
+        path.join(environment.targetTempDir, 'precompiled', 'v$version');
     Directory(downloadedArtifactsDir).createSync(recursive: true);
 
     final res = <Target, List<Artifact>>{};
@@ -134,7 +130,7 @@ class ArtifactProvider {
           final signatureFileName =
               PrecompileBinaries.signatureFileName(target, artifact);
           await _tryDownloadArtifacts(
-            crateHash: crateHash,
+            version: version,
             fileName: fileName,
             signatureFileName: signatureFileName,
             finalPath: downloadedPath,
@@ -182,20 +178,20 @@ class ArtifactProvider {
   }
 
   Future<void> _tryDownloadArtifacts({
-    required String crateHash,
+    required String version,
     required String fileName,
     required String signatureFileName,
     required String finalPath,
   }) async {
     final precompiledBinaries = environment.crateOptions.precompiledBinaries!;
     final prefix = precompiledBinaries.uriPrefix;
-    final url = Uri.parse('$prefix$crateHash/$fileName');
-    final signatureUrl = Uri.parse('$prefix$crateHash/$signatureFileName');
+    final url = Uri.parse('${prefix}v$version/$fileName');
+    final signatureUrl = Uri.parse('${prefix}v$version/$signatureFileName');
     _log.fine('Downloading signature from $signatureUrl');
     final signature = await _get(signatureUrl);
     if (signature.statusCode == 404) {
       _log.warning(
-          'Precompiled binaries not available for crate hash $crateHash ($fileName)');
+          'Precompiled binaries not available for version v$version ($fileName)');
       return;
     }
     if (signature.statusCode != 200) {
