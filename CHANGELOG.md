@@ -1,3 +1,10 @@
+## 0.1.1
+
+- Fix task leak on `inject_all` failure in keygen/sign/recover round 1 (abort orphaned tasks)
+- Fix TTL expiry cleanup to explicitly abort background tasks instead of just dropping handles
+- Replace unbounded channels with bounded `mpsc::channel(64)` at FFI boundary for backpressure
+- All 48 existing tests pass with zero regression
+
 ## 0.1.0
 
 - Initial public package release candidate
