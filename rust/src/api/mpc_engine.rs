@@ -229,7 +229,10 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
                 .map_err(|e| e.to_string())
         });
 
-        inject_all(&tx_in, server_msgs)?;
+        if let Err(e) = inject_all(&tx_in, server_msgs) {
+            task_handle.abort();
+            return Err(e);
+        }
 
         let client_msgs = match collect_batch(&mut rx_out, &round_complete) {
             Some((msgs, _done)) => msgs,
@@ -357,7 +360,10 @@ pub fn recover(
                 .map_err(|e| e.to_string())
         });
 
-        inject_all(&tx_in, server_msgs)?;
+        if let Err(e) = inject_all(&tx_in, server_msgs) {
+            task_handle.abort();
+            return Err(e);
+        }
 
         let (client_msgs, _done) = collect_batch(&mut rx_out, &round_complete)
             .ok_or_else(|| "key_refresh task closed before producing first message".to_string())?;
@@ -476,7 +482,10 @@ pub fn sign(
                 .map_err(|e| e.to_string())
         });
 
-        inject_all(&tx_in, server_msgs)?;
+        if let Err(e) = inject_all(&tx_in, server_msgs) {
+            task_handle.abort();
+            return Err(e);
+        }
 
         let (client_msgs, _done) = collect_batch(&mut rx_out, &round_complete)
             .ok_or_else(|| "sign task closed before producing first message".to_string())?;
