@@ -260,7 +260,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 18-01-PLAN.md — SAFE-01 + SAFE-02: inject_all 失败时 abort task + TTL 过期时 abort task (SAFE-01, SAFE-02, SAFE-04)
+- [x] 18-01-PLAN.md — SAFE-01 + SAFE-02: inject_all 失败时 abort task + TTL 过期时 abort task (SAFE-01, SAFE-02, SAFE-04)
 - [ ] 18-02-PLAN.md — SAFE-03: unbounded_channel 替换为 channel(64) (SAFE-03)
 
 ---
@@ -336,4 +336,4 @@ Plans:
 | 15. Example App 集成与文档 | 1/1 | Complete | 2026-04-09 |
 | 16. 批量消息收发优化 | 2/2 | Complete    | 2026-04-10 |
 | 17. Pub.dev 发布就绪与预编译二进制分发补全 | 2/2 | Complete | 2026-04-10 |
-| 18. Resource Safety — FFI Task/Channel Cleanup | 0/2 | Planning complete | - |
+| 18. Resource Safety — FFI Task/Channel Cleanup | 1/2 | In Progress|  |
