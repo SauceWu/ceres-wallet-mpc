@@ -383,7 +383,10 @@ pub fn recover(
         match sessions.get(&session_id) {
             None => return Err(format!("recovery session not found: {session_id}")),
             Some(s) if s.created_at.elapsed() > SESSION_TTL => {
-                sessions.remove(&session_id);
+                let session = sessions.remove(&session_id).unwrap();
+                if let Some(handle) = session.task_handle {
+                    handle.abort();
+                }
                 return Err(format!("recovery session expired (TTL): {session_id}"));
             }
             Some(s) => (s.tx_in.clone(), s.current_rotation_version, s.round_complete.clone()),
