@@ -15,7 +15,7 @@ pub struct KeygenSession {
     /// Send server messages to the protocol task
     pub tx_in: mpsc::Sender<Vec<u8>>,
     /// Receive client messages from the protocol task
-    pub rx_out: mpsc::UnboundedReceiver<Vec<u8>>,
+    pub rx_out: mpsc::Receiver<Vec<u8>>,
     /// Protocol task join handle — resolves to Keyshare bytes on completion
     pub task_handle: Option<JoinHandle<Result<Vec<u8>, String>>>,
     /// Notify signal from ChannelRelayConn — fired when protocol task enters waiting state
@@ -27,7 +27,7 @@ pub struct SignSession {
     /// Send server messages to the protocol task
     pub tx_in: mpsc::Sender<Vec<u8>>,
     /// Receive client messages from the protocol task
-    pub rx_out: mpsc::UnboundedReceiver<Vec<u8>>,
+    pub rx_out: mpsc::Receiver<Vec<u8>>,
     /// Protocol task join handle — resolves to (signature_bytes, recid) on completion
     pub task_handle: Option<JoinHandle<Result<(Vec<u8>, u8), String>>>,
     /// Message digest for signature verification
@@ -45,7 +45,7 @@ pub struct RecoverySession {
     /// Send server messages to the protocol task
     pub tx_in: mpsc::Sender<Vec<u8>>,
     /// Receive client messages from the protocol task
-    pub rx_out: mpsc::UnboundedReceiver<Vec<u8>>,
+    pub rx_out: mpsc::Receiver<Vec<u8>>,
     /// Protocol task join handle — resolves to new Keyshare bytes on completion
     pub task_handle: Option<JoinHandle<Result<Vec<u8>, String>>>,
     /// Session creation time for TTL

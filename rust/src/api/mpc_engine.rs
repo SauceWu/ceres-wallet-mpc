@@ -89,7 +89,7 @@ fn extract_pubkey_and_address(keyshare_bytes: &[u8]) -> Result<(String, String, 
 /// - protocol_done: true 表示协议 task 已完成（channel 关闭），false 表示协议在等输入
 /// 返回 None 仅当协议完成且无消息产出（rx 直接返回 None）。
 fn collect_batch(
-    rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
+    rx: &mut mpsc::Receiver<Vec<u8>>,
     round_complete: &Arc<Notify>,
 ) -> Option<(Vec<Vec<u8>>, bool)> {
     get_runtime().block_on(async {
@@ -218,7 +218,7 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
         let setup = KeygenSetup::new(inst, NoSigningKey, 0, vk, &[0u8, 0u8], 2);
 
         let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(16);
-        let (tx_out, mut rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_out, mut rx_out) = mpsc::channel::<Vec<u8>>(64);
 
         let (relay, round_complete) = ChannelRelayConn::new(rx_in, tx_out);
         let seed = random_seed();
@@ -349,7 +349,7 @@ pub fn recover(
         let setup = KeygenSetup::new(inst, NoSigningKey, 0, vk, &[0u8, 0u8], 2);
 
         let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(16);
-        let (tx_out, mut rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_out, mut rx_out) = mpsc::channel::<Vec<u8>>(64);
 
         let (relay, round_complete) = ChannelRelayConn::new(rx_in, tx_out);
         let seed = random_seed();
@@ -469,7 +469,7 @@ pub fn sign(
             .with_chain_path(chain_path);
 
         let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(16);
-        let (tx_out, mut rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_out, mut rx_out) = mpsc::channel::<Vec<u8>>(64);
 
         let (relay, round_complete) = ChannelRelayConn::new(rx_in, tx_out);
         let seed = random_seed();
