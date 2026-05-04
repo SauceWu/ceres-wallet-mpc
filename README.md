@@ -117,6 +117,52 @@ print(sig.signatureHex); // 64-byte ed25519 signature, ready for Solana
 > and echoed in the `WireEnvelope` so the server knows which protocol to spin
 > up.
 
+### Recover a Solana wallet (ed25519, FROST refresh)
+
+```dart
+// Decrypt the backup share first
+final decrypted = await client.decryptBackup(
+  encryptedBackup: storedBackupEnvelope,
+  password: userPassword,
+);
+
+// MpcClient.recover() autodispatches by share envelope curve.
+// Ed25519 path: 3-round FROST refresh; verifying_key (SOL address) preserved.
+final result = await client.recover(
+  mpcKeyId: solKey.mpcKeyId,
+  backupShare: decrypted.deviceBackupShare,
+  currentRotationVersion: oldRotationVersion,
+);
+
+assert(result.address == oldAddress);           // same SOL address
+assert(result.rotationVersion == oldRotationVersion + 1);
+```
+
+### Export a Solana private key (ed25519, 2-of-2 Lagrange)
+
+```dart
+// Reconstruct the FROST secret scalar via Lagrange interpolation.
+// Returns a 64-character hex string (32 bytes).
+final exportedHex = await client.exportPrivateKey(
+  localShare: yourEncryptedShare,
+  serverSharePrivate: serverShareJson,
+);
+
+// exportedHex is the FROST secret scalar (mod q, little-endian).
+// Load it directly into ed25519-dalek hazmat or any raw-scalar signer:
+//   let scalar = Scalar::from_canonical_bytes(hex::decode(exportedHex)?)?;
+
+// After export, sign calls on the same share are rejected:
+//   client.sign(...) → throws MpcProtocolException("signing rejected: keyshare has been exported")
+```
+
+> **WARNING — ed25519 export caveat:** the exported 32 bytes are the **FROST secret
+> scalar** (canonical mod-q little-endian), NOT an RFC 8032 seed. They load
+> directly into `ed25519-dalek`'s hazmat `ExpandedSecretKey` and any other
+> raw-scalar Schnorr signer, but they are **not** importable as a 24-word
+> mnemonic seed into Phantom / Solflare — those wallets re-expand the seed
+> via SHA-512, which is one-way. This is inherent to distributed keygen.
+
 ## Native Distribution
 
 This package is published as a Flutter FFI plugin and keeps the Rust source in the package.
@@ -279,7 +325,7 @@ cd rust && cargo test
 - [x] WebSocket transport (alongside HTTP)
 - [x] Batch message optimization (per-round batching via Notify signal)
 - [x] Solana support (FROST-Ed25519, 0.2.0)
-- [ ] ed25519 recovery / private key export (0.3.0)
+- [x] ed25519 recovery / private-key export (shipped 0.2.1)
 - [ ] Multi-chain support (Bitcoin / Tron / etc.)
 
 ## Security
