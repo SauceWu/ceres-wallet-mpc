@@ -36,9 +36,10 @@ use frost_ed25519::{
 
 use crate::api::address::derive_solana_address;
 use crate::api::types::{
-    KeygenCompletedPayload, MpcRoundResult, ProtocolType, RecoveryCompletedPayload, ShareEnvelope,
-    SignCompletedPayload, WireEnvelope,
+    ExportResult, KeygenCompletedPayload, MpcRoundResult, ProtocolType, RecoveryCompletedPayload,
+    ShareEnvelope, SignCompletedPayload, WireEnvelope,
 };
+use curve25519_dalek::{constants::ED25519_BASEPOINT_TABLE, EdwardsPoint, Scalar};
 use crate::session::{
     frost_client_identifier, frost_server_identifier, FrostKeygenSession, FrostRecoverySession,
     FrostSignSession, EXPORTED_KEYS, FROST_KEYGEN_SESSIONS, FROST_RECOVERY_SESSIONS,
@@ -714,6 +715,13 @@ fn recover_finalize(session_id: String) -> Result<String, String> {
     make_completed(0, serde_json::to_string(&completed).map_err(|e| e.to_string())?)
 }
 
+// ── Export ──────────────────────────────────────────────────────────────────
+
+/// 2-of-2 Lagrange reconstruction of the ed25519 secret scalar (stub).
+pub fn export_private_key(_local_share: String, _server_share: String) -> Result<String, String> {
+    Err("export_private_key: not yet implemented".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1030,6 +1038,129 @@ mod tests {
                 .unwrap()
                 .contains_key(session_id),
             "expired session must be evicted from FROST_RECOVERY_SESSIONS"
+        );
+    }
+
+    // ── Export tests ────────────────────────────────────────────────────────
+
+    /// Export Test 1: exported scalar * G == keyshare's verifying_key.
+    #[test]
+    fn test_ed25519_export_matches_verifying_key() {
+        use frost_ed25519::keys::{generate_with_dealer, IdentifierList};
+
+        let mut rng = OsRng;
+        let (shares, public_key_package) =
+            generate_with_dealer(2, 2, IdentifierList::Default, &mut rng).expect("dealer keygen");
+
+        let mut envs = Vec::new();
+        for (_id, secret_share) in shares.into_iter() {
+            let kp = KeyPackage::try_from(secret_share).expect("convert SecretShare");
+            let env = build_share_envelope(&kp, &public_key_package).expect("encode");
+            envs.push(env);
+        }
+        assert_eq!(envs.len(), 2);
+
+        let result_json = export_private_key(envs[0].clone(), envs[1].clone())
+            .expect("export should succeed");
+        let result: ExportResult = serde_json::from_str(&result_json).unwrap();
+        assert!(result.exported);
+
+        let secret_bytes = hex::decode(&result.private_key).expect("hex");
+        let arr: [u8; 32] = secret_bytes.as_slice().try_into().unwrap();
+        let secret = Option::<Scalar>::from(Scalar::from_canonical_bytes(arr))
+            .expect("canonical scalar");
+        let derived = (&secret * ED25519_BASEPOINT_TABLE).compress().to_bytes();
+        let expected_vk = public_key_package.verifying_key().serialize().unwrap();
+        assert_eq!(
+            derived.as_slice(),
+            expected_vk.as_slice(),
+            "exported scalar reconstruction must match verifying_key"
+        );
+    }
+
+    /// Export Test 2: exported scalar round-trips through ed25519-dalek hazmat.
+    #[test]
+    fn test_ed25519_export_signs_with_dalek() {
+        use ed25519_dalek::hazmat::{raw_sign, ExpandedSecretKey};
+        use ed25519_dalek::VerifyingKey;
+        use frost_ed25519::keys::{generate_with_dealer, IdentifierList};
+        use sha2::{Digest, Sha512};
+
+        let mut rng = OsRng;
+        let (shares, pkp) =
+            generate_with_dealer(2, 2, IdentifierList::Default, &mut rng).unwrap();
+        let mut envs = Vec::new();
+        for (_id, ss) in shares.into_iter() {
+            let kp = KeyPackage::try_from(ss).unwrap();
+            envs.push(build_share_envelope(&kp, &pkp).unwrap());
+        }
+
+        let result: ExportResult = serde_json::from_str(
+            &export_private_key(envs[0].clone(), envs[1].clone()).unwrap(),
+        )
+        .unwrap();
+        let secret_bytes: [u8; 32] =
+            hex::decode(&result.private_key).unwrap().try_into().unwrap();
+
+        // Derive a deterministic hash_prefix from the scalar (no seed exists for
+        // FROST-derived keys; any fixed derivation works for the sign-verify test).
+        let mut h = Sha512::new();
+        h.update(b"ceres-mpc-export-prefix-v1");
+        h.update(secret_bytes);
+        let hash_prefix: [u8; 32] = h.finalize()[..32].try_into().unwrap();
+
+        let scalar = Option::<Scalar>::from(Scalar::from_canonical_bytes(secret_bytes)).unwrap();
+        let esk = ExpandedSecretKey { scalar, hash_prefix };
+
+        let vk_bytes: [u8; 32] = pkp.verifying_key().serialize().unwrap().as_slice().try_into().unwrap();
+        let vk = VerifyingKey::from_bytes(&vk_bytes).expect("vk from bytes");
+
+        let msg = b"phase 20 export round-trip";
+        let sig = raw_sign::<Sha512>(&esk, msg, &vk);
+        vk.verify_strict(msg, &sig)
+            .expect("dalek must accept signature from exported scalar");
+    }
+
+    /// Export Test 3: sign_round1 rejects share after export (EXPORTED_KEYS guard).
+    #[test]
+    fn test_ed25519_signing_rejected_after_export() {
+        use frost_ed25519::keys::{generate_with_dealer, IdentifierList};
+        use frost_ed25519::round1 as f_r1;
+
+        let mut rng = OsRng;
+        let (shares, pkp) =
+            generate_with_dealer(2, 2, IdentifierList::Default, &mut rng).unwrap();
+        let mut envs = Vec::new();
+        let mut key_packages_vec = Vec::new();
+        for (_id, ss) in shares.into_iter() {
+            let kp = KeyPackage::try_from(ss).unwrap();
+            envs.push(build_share_envelope(&kp, &pkp).unwrap());
+            key_packages_vec.push(kp);
+        }
+        // Export the key — inserts vk_hex into EXPORTED_KEYS.
+        let _ = export_private_key(envs[0].clone(), envs[1].clone()).unwrap();
+
+        // Build a valid server round-1 commitment so sign_round1 reaches the guard.
+        let server_kp = &key_packages_vec[1];
+        let (_server_nonces, server_commitments) = f_r1::commit(server_kp.signing_share(), &mut rng);
+        let session_id = hex::encode([0xABu8; 32]);
+        let wire_payload = SignR1Payload {
+            commitments: ser_pkg(&server_commitments).unwrap(),
+        };
+        let dummy_wire =
+            encode_wire_payload(&session_id, ProtocolType::Dsg, 1, &wire_payload).unwrap();
+
+        let result = sign(
+            session_id,
+            1,
+            dummy_wire,
+            Some(envs[0].clone()),
+            Some(hex::encode(b"msg")),
+        );
+        let err = result.expect_err("sign must fail post-export");
+        assert!(
+            err.contains("signing rejected: keyshare has been exported"),
+            "got error: {err}"
         );
     }
 
