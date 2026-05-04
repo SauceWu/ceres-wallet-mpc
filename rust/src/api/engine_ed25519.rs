@@ -39,7 +39,7 @@ use crate::api::types::{
     ExportResult, KeygenCompletedPayload, MpcRoundResult, ProtocolType, RecoveryCompletedPayload,
     ShareEnvelope, SignCompletedPayload, WireEnvelope,
 };
-use curve25519_dalek::{constants::ED25519_BASEPOINT_TABLE, EdwardsPoint, Scalar};
+use curve25519_dalek::{constants::ED25519_BASEPOINT_TABLE, Scalar};
 use crate::session::{
     frost_client_identifier, frost_server_identifier, FrostKeygenSession, FrostRecoverySession,
     FrostSignSession, EXPORTED_KEYS, FROST_KEYGEN_SESSIONS, FROST_RECOVERY_SESSIONS,
@@ -717,9 +717,100 @@ fn recover_finalize(session_id: String) -> Result<String, String> {
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
-/// 2-of-2 Lagrange reconstruction of the ed25519 secret scalar (stub).
-pub fn export_private_key(_local_share: String, _server_share: String) -> Result<String, String> {
-    Err("export_private_key: not yet implemented".to_string())
+/// 2-of-2 Lagrange reconstruction of the ed25519 secret scalar.
+///
+/// secret = sum_i ( L_i(0) * SigningShare_i ) mod q
+/// where L_i(0) = prod_{j != i} ( -x_j / (x_i - x_j) ) mod q
+/// and x_k = scalar interpretation of Identifier_k::serialize() (32-byte
+/// little-endian for ed25519, matching curve25519-dalek canonical form).
+///
+/// Returns a JSON-encoded `ExportResult` whose `private_key` field is the
+/// 64-character hex of the 32-byte canonical mod-q scalar.
+///
+/// **Note:** This is the FROST secret scalar, NOT an RFC 8032 seed. Consumers
+/// wanting Phantom/Solflare compatibility require a separate scalar→seed
+/// conversion which is impossible (SHA-512 is one-way); see CHANGELOG.
+pub fn export_private_key(local_share: String, server_share: String) -> Result<String, String> {
+    let (local_kp, local_pkp) = extract_share_material(&local_share)?;
+    let (server_kp, server_pkp) = extract_share_material(&server_share)?;
+
+    // Both shares must reference the same verifying_key.
+    let local_vk = local_pkp
+        .verifying_key()
+        .serialize()
+        .map_err(|e| format!("verifying_key serialize: {e}"))?;
+    let server_vk = server_pkp
+        .verifying_key()
+        .serialize()
+        .map_err(|e| format!("verifying_key serialize: {e}"))?;
+    if local_vk != server_vk {
+        return Err(
+            "ed25519 export failed: verifying_key mismatch between local and server share"
+                .to_string(),
+        );
+    }
+
+    // Extract (identifier_bytes, signing_share_bytes) for each party.
+    let local_id_bytes = local_kp.identifier().serialize();
+    let server_id_bytes = server_kp.identifier().serialize();
+    // SigningShare::serialize() is infallible in frost-ed25519 v3 (returns Vec<u8>).
+    let local_share_bytes = local_kp.signing_share().serialize();
+    let server_share_bytes = server_kp.signing_share().serialize();
+
+    // Convert to curve25519_dalek::Scalar. Identifiers are guaranteed non-zero
+    // by FROST; SigningShare bytes are canonical mod q.
+    fn to_scalar(bytes: &[u8], label: &str) -> Result<Scalar, String> {
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| format!("{label}: expected 32 bytes, got {}", bytes.len()))?;
+        Option::<Scalar>::from(Scalar::from_canonical_bytes(arr))
+            .ok_or_else(|| format!("{label}: not a canonical mod-q scalar"))
+    }
+
+    let x1 = to_scalar(&local_id_bytes, "local identifier")?;
+    let x2 = to_scalar(&server_id_bytes, "server identifier")?;
+    let s1 = to_scalar(&local_share_bytes, "local signing_share")?;
+    let s2 = to_scalar(&server_share_bytes, "server signing_share")?;
+
+    // Generic 2-of-2 Lagrange coefficients at x=0:
+    //   L_1(0) = (0 - x2) / (x1 - x2) = -x2 * (x1 - x2)^-1
+    //   L_2(0) = (0 - x1) / (x2 - x1) = -x1 * (x2 - x1)^-1
+    let neg_x2 = -x2;
+    let neg_x1 = -x1;
+    let diff_12 = x1 - x2;
+    let diff_21 = x2 - x1;
+    if diff_12 == Scalar::ZERO {
+        return Err(
+            "ed25519 export failed: identical identifiers in 2-of-2 setup".to_string(),
+        );
+    }
+    let l1 = neg_x2 * diff_12.invert();
+    let l2 = neg_x1 * diff_21.invert();
+
+    let secret = l1 * s1 + l2 * s2;
+    let secret_bytes = secret.to_bytes(); // 32 bytes little-endian canonical mod q
+
+    // Defensive check: secret * G must equal verifying_key.
+    let derived_vk_bytes = (&secret * ED25519_BASEPOINT_TABLE).compress().to_bytes();
+    if derived_vk_bytes.as_slice() != local_vk.as_slice() {
+        return Err(
+            "ed25519 export failed: reconstructed scalar does not match verifying_key (sanity check failed)"
+                .to_string(),
+        );
+    }
+
+    let address = derive_solana_address(&local_vk)?;
+
+    // EXPORTED_KEYS guard — parity with secp256k1 export path (D-05).
+    let vk_hex = hex::encode(&local_vk);
+    EXPORTED_KEYS.lock().unwrap().insert(vk_hex);
+
+    let result = ExportResult {
+        private_key: hex::encode(secret_bytes),
+        address,
+        exported: true,
+    };
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
