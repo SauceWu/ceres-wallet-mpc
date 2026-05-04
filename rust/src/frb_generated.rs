@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -914611063;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -198266522;
 
 // Section: executor
 
@@ -567,6 +567,49 @@ fn wire__crate__api__types__message_digest_new_impl(
                 transform_result_sse::<_, ()>((move || {
                     let output_ok =
                         Result::<_, ()>::Ok(crate::api::types::MessageDigest::new(api_bytes))?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__engine_ed25519__recover_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "recover",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api_round = <i32>::sse_decode(&mut deserializer);
+            let api_server_payload = <String>::sse_decode(&mut deserializer);
+            let api_backup_share = <Option<String>>::sse_decode(&mut deserializer);
+            let api_current_rotation_version = <Option<i32>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::engine_ed25519::recover(
+                        api_session_id,
+                        api_round,
+                        api_server_payload,
+                        api_backup_share,
+                        api_current_rotation_version,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -1225,30 +1268,31 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         17 => wire__crate__api__types__message_digest_new_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__mpc_engine__recover_impl(port, ptr, rust_vec_len, data_len),
-        19 => {
+        18 => wire__crate__api__engine_ed25519__recover_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__mpc_engine__recover_impl(port, ptr, rust_vec_len, data_len),
+        20 => {
             wire__crate__api__types__share_envelope_decode_impl(port, ptr, rust_vec_len, data_len)
         }
-        20 => {
+        21 => {
             wire__crate__api__types__share_envelope_encode_impl(port, ptr, rust_vec_len, data_len)
         }
-        21 => wire__crate__api__types__share_envelope_new_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__engine_ed25519__sign_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__mpc_engine__sign_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__types__wire_envelope_curve_or_default_impl(
+        22 => wire__crate__api__types__share_envelope_new_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__engine_ed25519__sign_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__mpc_engine__sign_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__types__wire_envelope_curve_or_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        25 => wire__crate__api__types__wire_envelope_decode_all_payloads_impl(
+        26 => wire__crate__api__types__wire_envelope_decode_all_payloads_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        26 => wire__crate__api__types__wire_envelope_new_impl(port, ptr, rust_vec_len, data_len),
-        27 => {
+        27 => wire__crate__api__types__wire_envelope_new_impl(port, ptr, rust_vec_len, data_len),
+        28 => {
             wire__crate__api__types__wire_envelope_new_batch_impl(port, ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),

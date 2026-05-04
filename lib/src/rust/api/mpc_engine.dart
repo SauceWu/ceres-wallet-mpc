@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `collect_batch`, `decrypt_share_bytes`, `derive_aes_key`, `detect_curve_from_envelope`, `encrypt_share`, `extract_pubkey_and_address`, `frost_keygen_session_exists`, `frost_sign_session_exists`, `inject_all`, `instance_id_from_session`, `make_completed`, `make_in_progress_batch`, `parse_server_envelope_batch`, `random_seed`
+// These functions are ignored because they are not marked as `pub`: `collect_batch`, `decrypt_share_bytes`, `derive_aes_key`, `detect_curve_from_envelope`, `encrypt_share`, `extract_pubkey_and_address`, `frost_keygen_session_exists`, `frost_recovery_session_exists`, `frost_sign_session_exists`, `inject_all`, `instance_id_from_session`, `make_completed`, `make_in_progress_batch`, `parse_server_envelope_batch`, `random_seed`
 
 /// DKG 协议统一入口（curve 分发）。
 ///
@@ -23,7 +23,12 @@ Future<String> keygen({
   serverPayload: serverPayload,
 );
 
-/// key_refresh 协议统一入口。round==0 收集，round==1 创建，round>1 推进。
+/// key_refresh 协议统一入口（curve 分发）。round==0 收集，round==1 创建，round>1 推进。
+///
+/// 路由规则：
+/// - round==1：从 `backup_share` 的 ShareEnvelope 读取曲线（缺省 secp256k1，向后兼容）
+/// - round!=1：通过 session 是否存在于 FROST_RECOVERY_SESSIONS 决定路由（mid-protocol
+///   时 backup_share 已不再传入，session map 是 source of truth）
 Future<String> recover({
   required String sessionId,
   required int round,

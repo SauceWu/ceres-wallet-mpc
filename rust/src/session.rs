@@ -117,10 +117,39 @@ pub struct FrostSignSession {
     pub verifying_key_hex: String,
 }
 
+/// FROST refresh (recovery) session — mirrors `FrostKeygenSession` but carries
+/// the OLD KeyPackage / PublicKeyPackage required by `refresh_dkg_shares` to
+/// produce a new keyshare that preserves the original verifying_key.
+///
+/// frost-ed25519 v3 reuses `dkg::round1` / `dkg::round2` types for refresh
+/// (no separate `refresh::round1` module), so the secret/peer package fields
+/// share the same types as `FrostKeygenSession`.
+pub struct FrostRecoverySession {
+    pub created_at: Instant,
+    /// Rotation version at start of refresh; `+1` written into the
+    /// `RecoveryCompletedPayload` on finalize (round 0).
+    pub current_rotation_version: i32,
+    /// OLD KeyPackage — required as input to `refresh_dkg_shares`.
+    pub old_key_package: KeyPackage,
+    /// OLD PublicKeyPackage — required as input to `refresh_dkg_shares`.
+    pub old_public_key_package: PublicKeyPackage,
+    /// Set after `refresh_dkg_part1` (round 1 client step).
+    pub round1_secret: Option<dkg_r1::SecretPackage>,
+    /// Server's round1 package, captured in round 1.
+    pub peer_round1_pkg: Option<dkg_r1::Package>,
+    /// Set after `refresh_dkg_part2` (round 2 client step).
+    pub round2_secret: Option<dkg_r2::SecretPackage>,
+    /// Server's round2 package addressed to client, captured in round 2.
+    pub peer_round2_pkg: Option<dkg_r2::Package>,
+}
+
 pub static FROST_KEYGEN_SESSIONS: Lazy<Mutex<HashMap<String, FrostKeygenSession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub static FROST_SIGN_SESSIONS: Lazy<Mutex<HashMap<String, FrostSignSession>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+pub static FROST_RECOVERY_SESSIONS: Lazy<Mutex<HashMap<String, FrostRecoverySession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn remove_keygen_session(session_id: &str) -> Option<KeygenSession> {
@@ -133,4 +162,8 @@ pub fn remove_recovery_session(session_id: &str) -> Option<RecoverySession> {
 
 pub fn remove_sign_session(session_id: &str) -> Option<SignSession> {
     SIGN_SESSIONS.lock().unwrap().remove(session_id)
+}
+
+pub fn remove_frost_recovery_session(session_id: &str) -> Option<FrostRecoverySession> {
+    FROST_RECOVERY_SESSIONS.lock().unwrap().remove(session_id)
 }

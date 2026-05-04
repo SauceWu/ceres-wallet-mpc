@@ -6,8 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_share_envelope`, `decode_payload`, `deser_pkg`, `encode_wire_payload`, `extract_share_material`, `keygen_finalize`, `keygen_round1`, `keygen_round2`, `make_completed`, `make_in_progress`, `parse_wire`, `ser_pkg`, `sign_round1`, `sign_round2`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DkgR1Payload`, `DkgR2Payload`, `Ed25519KeyMaterial`, `SignR1Payload`, `SignR2Payload`
+// These functions are ignored because they are not marked as `pub`: `build_share_envelope`, `decode_payload`, `deser_pkg`, `encode_wire_payload`, `extract_share_material`, `keygen_finalize`, `keygen_round1`, `keygen_round2`, `make_completed`, `make_in_progress`, `parse_wire`, `recover_finalize`, `recover_round1`, `recover_round2`, `ser_pkg`, `sign_round1`, `sign_round2`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DkgR1Payload`, `DkgR2Payload`, `Ed25519KeyMaterial`, `RefreshR1Payload`, `RefreshR2Payload`, `SignR1Payload`, `SignR2Payload`
 // These functions are ignored (category: IgnoreBecauseNotAllowedOwner): `deserialize_frost`, `deserialize_frost`, `deserialize_frost`, `deserialize_frost`, `deserialize_frost`, `deserialize_frost`, `deserialize_frost`, `serialize_frost`, `serialize_frost`, `serialize_frost`, `serialize_frost`, `serialize_frost`, `serialize_frost`, `serialize_frost`
 
 /// FROST DKG entry point. round semantics:
@@ -40,6 +40,31 @@ Future<String> sign({
   serverPayload: serverPayload,
   share: share,
   messageHex: messageHex,
+);
+
+/// FROST refresh entry point. round semantics mirror `keygen()`:
+/// - 1: server's `refresh_dkg_part1` round1_package arrives → client part1 →
+///      reply own round1_pkg
+/// - 2: server's `refresh_dkg_part2` round2_package arrives → client part2 →
+///      reply own round2_pkg
+/// - 0: finalize (server signaled completion) → client `refresh_dkg_shares` →
+///      return `RecoveryCompletedPayload`
+///
+/// `backup_share` is required at round 1 only; it carries the OLD ShareEnvelope
+/// (curve = ed25519). `current_rotation_version` is required at round 1 only;
+/// finalize emits `current + 1`.
+Future<String> recover({
+  required String sessionId,
+  required int round,
+  required String serverPayload,
+  String? backupShare,
+  int? currentRotationVersion,
+}) => RustLib.instance.api.crateApiEngineEd25519Recover(
+  sessionId: sessionId,
+  round: round,
+  serverPayload: serverPayload,
+  backupShare: backupShare,
+  currentRotationVersion: currentRotationVersion,
 );
 
 abstract class DeserializeFrost {}

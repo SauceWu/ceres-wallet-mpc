@@ -31,7 +31,8 @@ use crate::relay::ChannelRelayConn;
 use crate::runtime::get_runtime;
 use crate::session::{
     KeygenSession, RecoverySession, SignSession, EXPORTED_KEYS, FROST_KEYGEN_SESSIONS,
-    FROST_SIGN_SESSIONS, KEYGEN_SESSIONS, RECOVERY_SESSIONS, SESSION_TTL, SIGN_SESSIONS,
+    FROST_RECOVERY_SESSIONS, FROST_SIGN_SESSIONS, KEYGEN_SESSIONS, RECOVERY_SESSIONS, SESSION_TTL,
+    SIGN_SESSIONS,
 };
 use tokio::sync::{mpsc, Notify};
 
@@ -199,6 +200,13 @@ fn frost_sign_session_exists(session_id: &str) -> bool {
     FROST_SIGN_SESSIONS.lock().unwrap().contains_key(session_id)
 }
 
+fn frost_recovery_session_exists(session_id: &str) -> bool {
+    FROST_RECOVERY_SESSIONS
+        .lock()
+        .unwrap()
+        .contains_key(session_id)
+}
+
 // ── Keygen ───────────────────────────────────────────────────────────
 
 /// DKG 协议统一入口（curve 分发）。
@@ -337,7 +345,12 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
 
 // ── Recovery ─────────────────────────────────────────────────────────
 
-/// key_refresh 协议统一入口。round==0 收集，round==1 创建，round>1 推进。
+/// key_refresh 协议统一入口（curve 分发）。round==0 收集，round==1 创建，round>1 推进。
+///
+/// 路由规则：
+/// - round==1：从 `backup_share` 的 ShareEnvelope 读取曲线（缺省 secp256k1，向后兼容）
+/// - round!=1：通过 session 是否存在于 FROST_RECOVERY_SESSIONS 决定路由（mid-protocol
+///   时 backup_share 已不再传入，session map 是 source of truth）
 pub fn recover(
     session_id: String,
     round: i32,
@@ -345,6 +358,30 @@ pub fn recover(
     backup_share: Option<String>,
     current_rotation_version: Option<i32>,
 ) -> Result<String, String> {
+    // ── Dispatch to ed25519 (FROST refresh) when applicable ──────────────
+    let route_to_ed25519 = if round == 1 {
+        match backup_share.as_deref() {
+            Some(s) => ShareEnvelope::decode(s)
+                .map(|(c, _)| c == Curve::Ed25519)
+                .unwrap_or(false),
+            None => false,
+        }
+    } else {
+        // round == 0 (finalize) or round > 1 (mid-protocol): the FROST session
+        // map is the source of truth — backup_share is no longer present.
+        frost_recovery_session_exists(&session_id)
+    };
+    if route_to_ed25519 {
+        return crate::api::engine_ed25519::recover(
+            session_id,
+            round,
+            server_payload,
+            backup_share,
+            current_rotation_version,
+        );
+    }
+
+    // ── secp256k1 (DKLs23 key_refresh) path ──────────────────────────────
     if round == 0 {
         let session = RECOVERY_SESSIONS.lock().unwrap()
             .remove(&session_id)
