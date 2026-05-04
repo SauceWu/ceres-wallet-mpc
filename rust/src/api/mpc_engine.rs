@@ -735,6 +735,13 @@ pub fn export_private_key(
     local_share: String,
     server_share_private: String,
 ) -> Result<String, String> {
+    // ── Dispatch to ed25519 (FROST) when applicable ──────────────────────────
+    // local_share is a ShareEnvelope (v2). secp256k1 falls back to the raw
+    // DKLs23 bytes path below via the base64 decode branch.
+    if let Ok((Curve::Ed25519, _)) = ShareEnvelope::decode(&local_share) {
+        return crate::api::engine_ed25519::export_private_key(local_share, server_share_private);
+    }
+
     let local_bytes = BASE64_STANDARD.decode(&local_share)
         .map_err(|e| format!("base64 decode local_share: {e}"))?;
     let server_bytes = BASE64_STANDARD.decode(&server_share_private)
