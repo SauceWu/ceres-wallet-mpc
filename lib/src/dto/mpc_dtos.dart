@@ -3,6 +3,28 @@
 /// JSON keys use snake_case to match Rust serde_json output.
 library;
 
+/// Supported elliptic curves / signature schemes.
+///
+/// - [secp256k1] → DKLs23 ECDSA → EVM addresses (`0x…`, EIP-55 checksum)
+/// - [ed25519]   → FROST Schnorr → Solana addresses (base58, 32–44 chars)
+enum Curve {
+  secp256k1('secp256k1'),
+  ed25519('ed25519');
+
+  const Curve(this.wireName);
+
+  /// Lowercase name used on the JSON-RPC wire (matches Rust serde
+  /// `#[serde(rename_all = "lowercase")]`).
+  final String wireName;
+
+  static Curve fromWireName(String s) {
+    for (final c in Curve.values) {
+      if (c.wireName == s) return c;
+    }
+    throw ArgumentError('unsupported curve: $s');
+  }
+}
+
 /// Round-level result returned by Rust stub functions via JSON serialization.
 class MpcRoundResult {
   final String status;
@@ -148,31 +170,45 @@ class RecoveryResult {
   }
 }
 
-/// Sign completion result per D-02.
-/// Contains ECDSA signature components: r, s, recid.
-/// Caller is responsible for assembling signedTx.
+/// Sign completion result.
+///
+/// secp256k1 (ECDSA): [r] and [s] are scalar components, [recid] is non-null.
+/// Caller assembles signedTx.
+///
+/// ed25519 (FROST/Schnorr): [r] is the 32-byte commitment R, [s] is the
+/// 32-byte scalar; the full Solana signature is `r || s` (64 bytes).
+/// [recid] is null. Get the assembled signature via [signatureHex].
 class SignResult {
   final String r;
   final String s;
-  final int recid;
+  final int? recid;
+  final Curve curve;
 
   const SignResult({
     required this.r,
     required this.s,
     required this.recid,
+    this.curve = Curve.secp256k1,
   });
 
   factory SignResult.fromJson(Map<String, dynamic> json) {
+    final curveName = json['curve'] as String? ?? 'secp256k1';
     return SignResult(
       r: json['r'] as String,
       s: json['s'] as String,
-      recid: json['recid'] as int,
+      recid: json['recid'] as int?,
+      curve: Curve.fromWireName(curveName),
     );
   }
 
+  /// Concatenated 64-byte signature (`r || s`) hex-encoded.
+  /// For ed25519 this is the full Solana-verifiable signature.
+  String get signatureHex => '$r$s';
+
   @override
   String toString() {
-    return 'SignResult(r: [REDACTED], s: [REDACTED], recid: $recid)';
+    return 'SignResult(r: [REDACTED], s: [REDACTED], recid: $recid, '
+        'curve: ${curve.wireName})';
   }
 }
 

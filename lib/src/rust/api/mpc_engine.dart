@@ -6,12 +6,13 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `decrypt_share_bytes`, `derive_aes_key`, `encrypt_share`, `extract_pubkey_and_address`, `instance_id_from_session`, `make_completed`, `make_in_progress`, `parse_server_envelope`, `random_seed`
+// These functions are ignored because they are not marked as `pub`: `collect_batch`, `decrypt_share_bytes`, `derive_aes_key`, `detect_curve_from_envelope`, `encrypt_share`, `extract_pubkey_and_address`, `frost_keygen_session_exists`, `frost_sign_session_exists`, `inject_all`, `instance_id_from_session`, `make_completed`, `make_in_progress_batch`, `parse_server_envelope_batch`, `random_seed`
 
-/// DKG 协议统一入口。
-/// round==0: 收集模式 — 不发消息，直接 join task 获取 Keyshare（用于服务端先完成的情况）
-/// round==1: 创建 session
-/// round>1: 推进已有 session
+/// DKG 协议统一入口（curve 分发）。
+///
+/// 路由规则：
+/// - round==1：从 `WireEnvelope.curve` 读取曲线（缺省 secp256k1，向后兼容）
+/// - round!=1：通过 session 是否存在于 FROST_KEYGEN_SESSIONS 决定路由
 Future<String> keygen({
   required String sessionId,
   required int round,
@@ -22,7 +23,7 @@ Future<String> keygen({
   serverPayload: serverPayload,
 );
 
-/// key_refresh 协议统一入口。round==1 需要 backup_share 和 current_rotation_version。
+/// key_refresh 协议统一入口。round==0 收集，round==1 创建，round>1 推进。
 Future<String> recover({
   required String sessionId,
   required int round,
@@ -37,7 +38,14 @@ Future<String> recover({
   currentRotationVersion: currentRotationVersion,
 );
 
-/// DSG 协议统一入口。round==1 需要 share 和 message_hash_hex。
+/// DSG 协议统一入口（curve 分发）。round==1 需要 share 和 message_hash_hex。
+///
+/// 路由规则：
+/// - round==1：从 share 的 ShareEnvelope 读取曲线（缺省 secp256k1）
+/// - round!=1：通过 session 是否存在于 FROST_SIGN_SESSIONS 决定
+///
+/// ed25519 的 `message_hash_hex` 参数语义为「待签名原始消息字节」（任意长度），
+/// 而非 32 字节摘要 — Solana 直接对 message bytes 签名。
 Future<String> sign({
   required String sessionId,
   required int round,

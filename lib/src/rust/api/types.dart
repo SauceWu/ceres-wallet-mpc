@@ -7,12 +7,28 @@ import '../frb_generated.dart';
 import '../lib.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `default_curve_secp`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BackupEnvelope`, `DecryptBackupResult`, `ExportResult`, `KeygenCompletedPayload`, `MpcRoundResult`, `RecoveryCompletedPayload`, `SignCompletedPayload`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+
+/// Supported elliptic curves / signature schemes.
+///
+/// `Secp256k1` → DKLs23 ECDSA → EVM addresses
+/// `Ed25519`   → FROST Schnorr → Solana addresses
+enum Curve {
+  secp256K1,
+  ed25519;
+
+  Future<void> asStr() =>
+      RustLib.instance.api.crateApiTypesCurveAsStr(that: this);
+
+  static Future<Curve> parse({required String s}) =>
+      RustLib.instance.api.crateApiTypesCurveParse(s: s);
+}
 
 /// 32 字节消息摘要的安全类型包装。
-/// 防止将任意 `Vec<u8>` 直接传入签名函数。
-/// 不实现 `From<Vec<u8>>`、`From<&[u8]>` 或 `From<[u8; 32]>`。
+/// 防止将任意 Vec<u8> 直接传入签名函数。
+/// 不实现 From<Vec<u8>>、From<&[u8]> 或 From<[u8; 32]>。
 class MessageDigest {
   final U8Array32 field0;
 
@@ -49,6 +65,61 @@ class MessageDigest {
 /// 协议类型枚举，用于 wire format 信封路由。
 enum ProtocolType { dkg, dsg, rotation }
 
+/// Curve-tagged keyshare wrapper (v2 format).
+///
+/// Backward compat: v0.1.x keyshares are raw DKLs23 bytes; the engine first
+/// tries to parse `local_encrypted_share` as a JSON `ShareEnvelope` and falls
+/// back to raw secp256k1 DKLs23 bytes if that fails. New shares produced from
+/// v0.2.0 always use this envelope.
+class ShareEnvelope {
+  final int v;
+  final String curve;
+
+  /// base64-encoded protocol-native keyshare bytes
+  final String share;
+
+  const ShareEnvelope({
+    required this.v,
+    required this.curve,
+    required this.share,
+  });
+
+  /// Decode `local_encrypted_share` (the base64 string given to FFI).
+  ///
+  /// Tries v2 envelope first; falls back to treating the bytes as raw
+  /// secp256k1 DKLs23 keyshare for backward compat with v0.1.x shares.
+  static Future<(Curve, Uint8List)> decode({
+    required String localEncryptedShare,
+  }) => RustLib.instance.api.crateApiTypesShareEnvelopeDecode(
+    localEncryptedShare: localEncryptedShare,
+  );
+
+  /// Encode as JSON, then base64 — what callers store as `local_encrypted_share`.
+  Future<String> encode() =>
+      RustLib.instance.api.crateApiTypesShareEnvelopeEncode(that: this);
+
+  // HINT: Make it `#[frb(sync)]` to let it become the default constructor of Dart class.
+  static Future<ShareEnvelope> newInstance({
+    required Curve curve,
+    required List<int> shareBytes,
+  }) => RustLib.instance.api.crateApiTypesShareEnvelopeNew(
+    curve: curve,
+    shareBytes: shareBytes,
+  );
+
+  @override
+  int get hashCode => v.hashCode ^ curve.hashCode ^ share.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareEnvelope &&
+          runtimeType == other.runtimeType &&
+          v == other.v &&
+          curve == other.curve &&
+          share == other.share;
+}
+
 /// client ↔ server 协议消息的统一 JSON 信封。
 /// dkls23-ll 消息通过 serde 序列化后放入 payload 字段。
 /// 此结构在 Phase 8 冻结，Phase 9-13 直接使用。
@@ -78,6 +149,14 @@ class WireEnvelope {
   /// Some("commitment") = commitment_2 广播，Some("msg3") = KeygenMsg3 P2P，None = 其他
   final String? step;
 
+  /// 批量 payload 列表（每条为 base64 编码的协议消息）。
+  /// 与 payload 字段互斥：有 payloads 时 payload 为空字符串。
+  final List<String>? payloads;
+
+  /// 椭圆曲线 / 签名方案。仅 round=1 (keygen 启动) 必填，后续轮次可省略
+  /// (engine 从 session 状态读取)。缺省视为 "secp256k1"。
+  final String? curve;
+
   const WireEnvelope({
     required this.sessionId,
     required this.protocol,
@@ -87,7 +166,18 @@ class WireEnvelope {
     required this.payloadEncoding,
     required this.payload,
     this.step,
+    this.payloads,
+    this.curve,
   });
+
+  /// 读取 curve 字段，缺省为 secp256k1（向后兼容 v0.1.x 信封）。
+  Future<Curve> curveOrDefault() =>
+      RustLib.instance.api.crateApiTypesWireEnvelopeCurveOrDefault(that: this);
+
+  /// 解码所有 payload：如果有 payloads 字段则解码多条，否则解码单条 payload。
+  /// T-16-01: 每条 base64 解码失败返回 Err，不 panic。
+  Future<List<Uint8List>> decodeAllPayloads() => RustLib.instance.api
+      .crateApiTypesWireEnvelopeDecodeAllPayloads(that: this);
 
   // HINT: Make it `#[frb(sync)]` to let it become the default constructor of Dart class.
   /// 构造新信封，payload_encoding 默认为 "cbor_base64"
@@ -109,6 +199,25 @@ class WireEnvelope {
     step: step,
   );
 
+  /// 批量构造：payloads 为多条 base64 编码的消息，payload 设为空字符串。
+  static Future<WireEnvelope> newBatch({
+    required String sessionId,
+    required ProtocolType protocol,
+    required int round,
+    required int fromId,
+    int? toId,
+    required List<String> payloads,
+    String? step,
+  }) => RustLib.instance.api.crateApiTypesWireEnvelopeNewBatch(
+    sessionId: sessionId,
+    protocol: protocol,
+    round: round,
+    fromId: fromId,
+    toId: toId,
+    payloads: payloads,
+    step: step,
+  );
+
   @override
   int get hashCode =>
       sessionId.hashCode ^
@@ -118,7 +227,9 @@ class WireEnvelope {
       toId.hashCode ^
       payloadEncoding.hashCode ^
       payload.hashCode ^
-      step.hashCode;
+      step.hashCode ^
+      payloads.hashCode ^
+      curve.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -132,5 +243,7 @@ class WireEnvelope {
           toId == other.toId &&
           payloadEncoding == other.payloadEncoding &&
           payload == other.payload &&
-          step == other.step;
+          step == other.step &&
+          payloads == other.payloads &&
+          curve == other.curve;
 }

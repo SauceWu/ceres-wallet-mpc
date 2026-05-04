@@ -6,6 +6,19 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Derive a Solana address (base58 of the 32-byte ed25519 verifying key).
+///
+/// Input: 32-byte compressed ed25519 public key (Edwards y-coordinate + sign bit,
+/// per RFC 8032 §5.1.5). Output: standard Solana base58 address (32–44 chars).
+///
+/// Note: this does not validate that the bytes form a valid curve point — that
+/// guarantee is upstream of the FROST DKG (the verifying key returned by
+/// frost-ed25519 is always on-curve).
+Future<String> deriveSolanaAddress({required List<int> verifyingKey}) => RustLib
+    .instance
+    .api
+    .crateApiAddressDeriveSolanaAddress(verifyingKey: verifyingKey);
+
 /// Derive an EIP-55 checksummed EVM address from an uncompressed secp256k1 public key.
 ///
 /// Input: 65-byte uncompressed public key (0x04 prefix + 64 bytes X,Y coordinates)

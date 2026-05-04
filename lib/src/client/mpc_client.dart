@@ -33,10 +33,21 @@ class MpcClient {
       : _engine = engine,
         _transport = transport;
 
-  /// Execute full keygen protocol (4-round DKLs23 DKG).
-  Future<KeygenResult> keygen() async {
+  /// Execute full keygen protocol.
+  ///
+  /// - [Curve.secp256k1] (default): 4-round DKLs23 DKG → EVM-compatible keyshare
+  ///   + EIP-55 checksummed `0x` address.
+  /// - [Curve.ed25519]: 3-round FROST DKG → Solana-compatible keyshare +
+  ///   base58 SOL address.
+  ///
+  /// The selected [curve] is sent to the server in the round 1 RPC params; the
+  /// server must support the requested curve.
+  Future<KeygenResult> keygen({Curve curve = Curve.secp256k1}) async {
     // Round 1: initiate
-    final initData = await _rpcCall(MpcMethod.keygen, {'round': 1});
+    final initData = await _rpcCall(MpcMethod.keygen, {
+      'round': 1,
+      'curve': curve.wireName,
+    });
     final sessionId = initData['sessionId'] as String;
 
     var currentResult = await _engine.keygen(
@@ -162,7 +173,17 @@ class MpcClient {
         'Unexpected recovery state: ${currentResult.status}');
   }
 
-  /// Execute full sign protocol (4-round DKLs23 DSG).
+  /// Execute full sign protocol.
+  ///
+  /// - secp256k1: 4-round DKLs23 DSG → ECDSA `(r, s, recid)`. [messageHash]
+  ///   must be a 32-byte digest hex (typically `keccak256(rlpEncodedTx)`).
+  /// - ed25519: 2-round FROST → Schnorr signature. [messageHash] is the
+  ///   **raw message bytes** hex (Solana signs the serialized transaction
+  ///   message directly, not a hash). The 64-byte signature is available via
+  ///   [SignResult.signatureHex].
+  ///
+  /// Curve dispatch is automatic — read from the [localEncryptedShare]
+  /// envelope by the engine.
   Future<SignResult> sign({
     required String mpcKeyId,
     required String messageHash,

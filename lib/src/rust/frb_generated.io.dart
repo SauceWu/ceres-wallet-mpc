@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/address.dart';
+import 'api/engine_ed25519.dart';
 import 'api/mpc_engine.dart';
 import 'api/simple.dart';
 import 'api/types.dart';
@@ -26,16 +27,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  DeserializeFrost dco_decode_TraitDef_DeserializeFrost(dynamic raw);
+
+  @protected
+  SerializeFrost dco_decode_TraitDef_SerializeFrost(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_i_32(dynamic raw);
 
   @protected
   MessageDigest dco_decode_box_autoadd_message_digest(dynamic raw);
 
   @protected
+  ShareEnvelope dco_decode_box_autoadd_share_envelope(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_u_8(dynamic raw);
 
   @protected
+  WireEnvelope dco_decode_box_autoadd_wire_envelope(dynamic raw);
+
+  @protected
+  Curve dco_decode_curve(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -56,7 +78,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? dco_decode_opt_box_autoadd_u_8(dynamic raw);
 
   @protected
+  List<String>? dco_decode_opt_list_String(dynamic raw);
+
+  @protected
   ProtocolType dco_decode_protocol_type(dynamic raw);
+
+  @protected
+  (Curve, Uint8List) dco_decode_record_curve_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  ShareEnvelope dco_decode_share_envelope(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -82,10 +113,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ShareEnvelope sse_decode_box_autoadd_share_envelope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_box_autoadd_u_8(SseDeserializer deserializer);
 
   @protected
+  WireEnvelope sse_decode_box_autoadd_wire_envelope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Curve sse_decode_curve(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<Uint8List> sse_decode_list_list_prim_u_8_strict(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -106,7 +158,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? sse_decode_opt_box_autoadd_u_8(SseDeserializer deserializer);
 
   @protected
+  List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
+
+  @protected
   ProtocolType sse_decode_protocol_type(SseDeserializer deserializer);
+
+  @protected
+  (Curve, Uint8List) sse_decode_record_curve_list_prim_u_8_strict(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShareEnvelope sse_decode_share_envelope(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -136,10 +199,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_share_envelope(
+    ShareEnvelope self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_u_8(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_wire_envelope(
+    WireEnvelope self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_curve(Curve self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_list_prim_u_8_strict(
+    List<Uint8List> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
@@ -163,7 +250,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_8(int? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_protocol_type(ProtocolType self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_record_curve_list_prim_u_8_strict(
+    (Curve, Uint8List) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_share_envelope(ShareEnvelope self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);
