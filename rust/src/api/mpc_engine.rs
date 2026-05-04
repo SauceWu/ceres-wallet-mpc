@@ -1,6 +1,7 @@
 use crate::api::types::{
-    BackupEnvelope, DecryptBackupResult, ExportResult, KeygenCompletedPayload, MessageDigest,
-    MpcRoundResult, ProtocolType, RecoveryCompletedPayload, SignCompletedPayload, WireEnvelope,
+    BackupEnvelope, Curve, DecryptBackupResult, ExportResult, KeygenCompletedPayload,
+    MessageDigest, MpcRoundResult, ProtocolType, RecoveryCompletedPayload, ShareEnvelope,
+    SignCompletedPayload, WireEnvelope,
 };
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -29,8 +30,8 @@ use sl_mpc_mate::message::InstanceId;
 use crate::relay::ChannelRelayConn;
 use crate::runtime::get_runtime;
 use crate::session::{
-    KeygenSession, RecoverySession, SignSession, EXPORTED_KEYS, KEYGEN_SESSIONS,
-    RECOVERY_SESSIONS, SESSION_TTL, SIGN_SESSIONS,
+    KeygenSession, RecoverySession, SignSession, EXPORTED_KEYS, FROST_KEYGEN_SESSIONS,
+    FROST_SIGN_SESSIONS, KEYGEN_SESSIONS, RECOVERY_SESSIONS, SESSION_TTL, SIGN_SESSIONS,
 };
 use tokio::sync::{mpsc, Notify};
 
@@ -176,13 +177,47 @@ fn parse_server_envelope_batch(server_payload: &str) -> Result<(WireEnvelope, Ve
     Ok((server_env, messages))
 }
 
+// ── Curve dispatch helpers ──────────────────────────────────────────
+
+/// Round 1 only: detect curve from inbound `WireEnvelope.curve`. Returns
+/// `Secp256k1` when the envelope is unparseable or the field is absent
+/// (back-compat for v0.1.x server impls that never emit `curve`).
+fn detect_curve_from_envelope(server_payload: &str) -> Curve {
+    serde_json::from_str::<WireEnvelope>(server_payload)
+        .map(|env| env.curve_or_default())
+        .unwrap_or(Curve::Secp256k1)
+}
+
+fn frost_keygen_session_exists(session_id: &str) -> bool {
+    FROST_KEYGEN_SESSIONS
+        .lock()
+        .unwrap()
+        .contains_key(session_id)
+}
+
+fn frost_sign_session_exists(session_id: &str) -> bool {
+    FROST_SIGN_SESSIONS.lock().unwrap().contains_key(session_id)
+}
+
 // ── Keygen ───────────────────────────────────────────────────────────
 
-/// DKG 协议统一入口。
-/// round==0: 收集模式 — 不发消息，直接 join task 获取 Keyshare（用于服务端先完成的情况）
-/// round==1: 创建 session
-/// round>1: 推进已有 session
+/// DKG 协议统一入口（curve 分发）。
+///
+/// 路由规则：
+/// - round==1：从 `WireEnvelope.curve` 读取曲线（缺省 secp256k1，向后兼容）
+/// - round!=1：通过 session 是否存在于 FROST_KEYGEN_SESSIONS 决定路由
 pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<String, String> {
+    // ── Dispatch to ed25519 (FROST) when applicable ──────────────────
+    let route_to_ed25519 = if round == 1 {
+        detect_curve_from_envelope(&server_payload) == Curve::Ed25519
+    } else {
+        frost_keygen_session_exists(&session_id)
+    };
+    if route_to_ed25519 {
+        return crate::api::engine_ed25519::keygen(session_id, round, server_payload);
+    }
+
+    // ── secp256k1 (DKLs23 ECDSA) path ────────────────────────────────
     // round==0: collect mode — join task, return completed with Keyshare
     if round == 0 {
         let session = KEYGEN_SESSIONS.lock().unwrap()
@@ -432,7 +467,14 @@ pub fn recover(
 
 // ── Signing ──────────────────────────────────────────────────────────
 
-/// DSG 协议统一入口。round==1 需要 share 和 message_hash_hex。
+/// DSG 协议统一入口（curve 分发）。round==1 需要 share 和 message_hash_hex。
+///
+/// 路由规则：
+/// - round==1：从 share 的 ShareEnvelope 读取曲线（缺省 secp256k1）
+/// - round!=1：通过 session 是否存在于 FROST_SIGN_SESSIONS 决定
+///
+/// ed25519 的 `message_hash_hex` 参数语义为「待签名原始消息字节」（任意长度），
+/// 而非 32 字节摘要 — Solana 直接对 message bytes 签名。
 pub fn sign(
     session_id: String,
     round: i32,
@@ -440,6 +482,28 @@ pub fn sign(
     share: Option<String>,
     message_hash_hex: Option<String>,
 ) -> Result<String, String> {
+    // ── Dispatch to ed25519 (FROST) when applicable ──────────────────
+    let route_to_ed25519 = if round == 1 {
+        match share.as_deref() {
+            Some(s) => ShareEnvelope::decode(s)
+                .map(|(c, _)| c == Curve::Ed25519)
+                .unwrap_or(false),
+            None => false,
+        }
+    } else {
+        frost_sign_session_exists(&session_id)
+    };
+    if route_to_ed25519 {
+        return crate::api::engine_ed25519::sign(
+            session_id,
+            round,
+            server_payload,
+            share,
+            message_hash_hex,
+        );
+    }
+
+    // ── secp256k1 (DKLs23 ECDSA) path ────────────────────────────────
     if round == 1 {
         let (server_env, server_msgs) = parse_server_envelope_batch(&server_payload)?;
         let share_b64 = share.ok_or("share required for round 1")?;
@@ -447,8 +511,11 @@ pub fn sign(
 
         let digest = MessageDigest::from_hex(&hash_hex)?;
 
-        let ks_bytes = BASE64_STANDARD.decode(&share_b64)
-            .map_err(|e| format!("base64 decode keyshare: {e}"))?;
+        // Unwrap ShareEnvelope (v2) → raw DKLs23 bytes; falls back to legacy raw.
+        let (curve, ks_bytes) = ShareEnvelope::decode(&share_b64)?;
+        if curve != Curve::Secp256k1 {
+            return Err("expected secp256k1 keyshare on this dispatch path".to_string());
+        }
         let keyshare = Keyshare::from_bytes(&ks_bytes)
             .ok_or("invalid keyshare bytes")?;
 
@@ -549,7 +616,8 @@ pub fn sign(
             let completed = SignCompletedPayload {
                 r: hex::encode(&sig_bytes[0..32]),
                 s: hex::encode(&sig_bytes[32..64]),
-                recid,
+                recid: Some(recid),
+                curve: "secp256k1".to_string(),
             };
             make_completed(server_env.round, serde_json::to_string(&completed).map_err(|e| e.to_string())?)
         }

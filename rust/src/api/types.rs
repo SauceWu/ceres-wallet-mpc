@@ -1,5 +1,91 @@
 use serde::{Deserialize, Serialize};
 
+/// Supported elliptic curves / signature schemes.
+///
+/// `Secp256k1` → DKLs23 ECDSA → EVM addresses
+/// `Ed25519`   → FROST Schnorr → Solana addresses
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Curve {
+    Secp256k1,
+    Ed25519,
+}
+
+impl Curve {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Curve::Secp256k1 => "secp256k1",
+            Curve::Ed25519 => "ed25519",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "secp256k1" | "" => Ok(Curve::Secp256k1),
+            "ed25519" => Ok(Curve::Ed25519),
+            other => Err(format!("unsupported curve: {other}")),
+        }
+    }
+}
+
+/// Curve-tagged keyshare wrapper (v2 format).
+///
+/// Backward compat: v0.1.x keyshares are raw DKLs23 bytes; the engine first
+/// tries to parse `local_encrypted_share` as a JSON `ShareEnvelope` and falls
+/// back to raw secp256k1 DKLs23 bytes if that fails. New shares produced from
+/// v0.2.0 always use this envelope.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShareEnvelope {
+    pub v: u8,
+    pub curve: String,
+    /// base64-encoded protocol-native keyshare bytes
+    pub share: String,
+}
+
+impl ShareEnvelope {
+    pub fn new(curve: Curve, share_bytes: &[u8]) -> Self {
+        use base64::engine::general_purpose::STANDARD as B64;
+        use base64::Engine as _;
+        Self {
+            v: 2,
+            curve: curve.as_str().to_string(),
+            share: B64.encode(share_bytes),
+        }
+    }
+
+    /// Encode as JSON, then base64 — what callers store as `local_encrypted_share`.
+    pub fn encode(&self) -> Result<String, String> {
+        use base64::engine::general_purpose::STANDARD as B64;
+        use base64::Engine as _;
+        let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
+        Ok(B64.encode(json.as_bytes()))
+    }
+
+    /// Decode `local_encrypted_share` (the base64 string given to FFI).
+    ///
+    /// Tries v2 envelope first; falls back to treating the bytes as raw
+    /// secp256k1 DKLs23 keyshare for backward compat with v0.1.x shares.
+    pub fn decode(local_encrypted_share: &str) -> Result<(Curve, Vec<u8>), String> {
+        use base64::engine::general_purpose::STANDARD as B64;
+        use base64::Engine as _;
+        let raw = B64
+            .decode(local_encrypted_share)
+            .map_err(|e| format!("base64 decode keyshare: {e}"))?;
+
+        // Try v2 JSON envelope
+        if let Ok(env) = serde_json::from_slice::<ShareEnvelope>(&raw) {
+            let curve = Curve::parse(&env.curve)?;
+            let share_bytes = B64
+                .decode(&env.share)
+                .map_err(|e| format!("base64 decode envelope.share: {e}"))?;
+            return Ok((curve, share_bytes));
+        }
+
+        // Fallback: legacy v0.1.x raw DKLs23 bytes
+        Ok((Curve::Secp256k1, raw))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MpcRoundResult {
     pub status: String,
@@ -47,12 +133,25 @@ pub struct RecoveryCompletedPayload {
 }
 
 /// Payload returned when sign completes (status: "completed").
-/// Per D-02: r, s, recid — caller assembles signedTx.
+///
+/// secp256k1 (ECDSA): `r` and `s` are scalar components, `recid` is `Some(u8)`,
+/// `curve` is `"secp256k1"`. Caller assembles signedTx.
+///
+/// ed25519 (FROST/Schnorr): `r` is the 32-byte commitment R, `s` is the 32-byte
+/// scalar; the full Solana signature is `r || s` (64 bytes). `recid` is `None`,
+/// `curve` is `"ed25519"`. No recovery id concept on Schnorr.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignCompletedPayload {
     pub r: String,
     pub s: String,
-    pub recid: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recid: Option<u8>,
+    #[serde(default = "default_curve_secp")]
+    pub curve: String,
+}
+
+fn default_curve_secp() -> String {
+    "secp256k1".to_string()
 }
 
 /// Result of exporting MPC wallet to a standard wallet.
@@ -100,6 +199,10 @@ pub struct WireEnvelope {
     /// 与 payload 字段互斥：有 payloads 时 payload 为空字符串。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payloads: Option<Vec<String>>,
+    /// 椭圆曲线 / 签名方案。仅 round=1 (keygen 启动) 必填，后续轮次可省略
+    /// (engine 从 session 状态读取)。缺省视为 "secp256k1"。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub curve: Option<String>,
 }
 
 impl WireEnvelope {
@@ -123,6 +226,7 @@ impl WireEnvelope {
             payload,
             step,
             payloads: None,
+            curve: None,
         }
     }
 
@@ -146,7 +250,16 @@ impl WireEnvelope {
             payload: String::new(),
             step,
             payloads: Some(payloads),
+            curve: None,
         }
+    }
+
+    /// 读取 curve 字段，缺省为 secp256k1（向后兼容 v0.1.x 信封）。
+    pub fn curve_or_default(&self) -> Curve {
+        self.curve
+            .as_deref()
+            .and_then(|s| Curve::parse(s).ok())
+            .unwrap_or(Curve::Secp256k1)
     }
 
     /// 解码所有 payload：如果有 payloads 字段则解码多条，否则解码单条 payload。
@@ -359,5 +472,108 @@ mod tests {
     fn test_message_digest_from_hex_empty_fails() {
         let result = MessageDigest::from_hex("");
         assert!(result.is_err());
+    }
+
+    // ── Curve 测试 ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_curve_serializes_lowercase() {
+        assert_eq!(serde_json::to_string(&Curve::Secp256k1).unwrap(), r#""secp256k1""#);
+        assert_eq!(serde_json::to_string(&Curve::Ed25519).unwrap(), r#""ed25519""#);
+    }
+
+    #[test]
+    fn test_curve_parse_known() {
+        assert_eq!(Curve::parse("secp256k1").unwrap(), Curve::Secp256k1);
+        assert_eq!(Curve::parse("ed25519").unwrap(), Curve::Ed25519);
+        // Empty string defaults to secp256k1 for back-compat
+        assert_eq!(Curve::parse("").unwrap(), Curve::Secp256k1);
+    }
+
+    #[test]
+    fn test_curve_parse_unknown_errors() {
+        assert!(Curve::parse("p256").is_err());
+        assert!(Curve::parse("ed448").is_err());
+    }
+
+    // ── ShareEnvelope 测试（向后兼容关键路径）────────────────────────
+
+    #[test]
+    fn test_share_envelope_v2_round_trip_ed25519() {
+        let bytes = b"hello ed25519 share";
+        let env = ShareEnvelope::new(Curve::Ed25519, bytes);
+        let encoded = env.encode().unwrap();
+        let (curve, decoded) = ShareEnvelope::decode(&encoded).unwrap();
+        assert_eq!(curve, Curve::Ed25519);
+        assert_eq!(decoded, bytes);
+    }
+
+    #[test]
+    fn test_share_envelope_v2_round_trip_secp() {
+        let bytes = b"hello secp share";
+        let env = ShareEnvelope::new(Curve::Secp256k1, bytes);
+        let encoded = env.encode().unwrap();
+        let (curve, decoded) = ShareEnvelope::decode(&encoded).unwrap();
+        assert_eq!(curve, Curve::Secp256k1);
+        assert_eq!(decoded, bytes);
+    }
+
+    /// v0.1.x backward compatibility: raw DKLs23 keyshare bytes (which are NOT
+    /// valid JSON) must decode as Secp256k1 + the raw bytes verbatim.
+    #[test]
+    fn test_share_envelope_legacy_raw_bytes_treated_as_secp() {
+        use base64::engine::general_purpose::STANDARD as B64;
+        use base64::Engine as _;
+        // Synthetic non-JSON bytes that mimic a legacy raw share.
+        let raw = vec![0x42u8; 64];
+        let legacy_b64 = B64.encode(&raw);
+
+        let (curve, decoded) = ShareEnvelope::decode(&legacy_b64).unwrap();
+        assert_eq!(curve, Curve::Secp256k1);
+        assert_eq!(decoded, raw);
+    }
+
+    // ── Sign payload curve field ─────────────────────────────────────
+
+    /// Old server payloads omit the `curve` field — must default to "secp256k1".
+    #[test]
+    fn test_sign_completed_payload_curve_defaults_to_secp() {
+        let json = r#"{"r":"aa","s":"bb","recid":0}"#;
+        let parsed: SignCompletedPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.curve, "secp256k1");
+        assert_eq!(parsed.recid, Some(0));
+    }
+
+    #[test]
+    fn test_sign_completed_payload_ed25519_no_recid() {
+        let payload = SignCompletedPayload {
+            r: "aa".to_string(),
+            s: "bb".to_string(),
+            recid: None,
+            curve: "ed25519".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        // recid omitted (skip_serializing_if), curve present
+        assert!(!json.contains("recid"));
+        assert!(json.contains(r#""curve":"ed25519""#));
+    }
+
+    // ── WireEnvelope curve field ─────────────────────────────────────
+
+    #[test]
+    fn test_wire_envelope_curve_or_default_when_absent() {
+        let env = WireEnvelope::new(
+            "aabb".into(), ProtocolType::Dkg, 1, 0, None, "x".into(), None,
+        );
+        assert_eq!(env.curve_or_default(), Curve::Secp256k1);
+    }
+
+    #[test]
+    fn test_wire_envelope_curve_or_default_when_present() {
+        let mut env = WireEnvelope::new(
+            "aabb".into(), ProtocolType::Dkg, 1, 0, None, "x".into(), None,
+        );
+        env.curve = Some("ed25519".to_string());
+        assert_eq!(env.curve_or_default(), Curve::Ed25519);
     }
 }

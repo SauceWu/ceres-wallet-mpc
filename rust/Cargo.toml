@@ -1,6 +1,6 @@
 [package]
 name = "ceres_mpc"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 build = false
 
@@ -28,6 +28,9 @@ derivation-path = "0.2"
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
+frost-ed25519 = "3"
+bs58 = "0.5"
+rand_core = "0.6"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

@@ -1,5 +1,23 @@
 use tiny_keccak::{Hasher, Keccak};
 
+/// Derive a Solana address (base58 of the 32-byte ed25519 verifying key).
+///
+/// Input: 32-byte compressed ed25519 public key (Edwards y-coordinate + sign bit,
+/// per RFC 8032 §5.1.5). Output: standard Solana base58 address (32–44 chars).
+///
+/// Note: this does not validate that the bytes form a valid curve point — that
+/// guarantee is upstream of the FROST DKG (the verifying key returned by
+/// frost-ed25519 is always on-curve).
+pub fn derive_solana_address(verifying_key: &[u8]) -> Result<String, String> {
+    if verifying_key.len() != 32 {
+        return Err(format!(
+            "Solana pubkey must be exactly 32 bytes, got {}",
+            verifying_key.len()
+        ));
+    }
+    Ok(bs58::encode(verifying_key).into_string())
+}
+
 /// Derive an EIP-55 checksummed EVM address from an uncompressed secp256k1 public key.
 ///
 /// Input: 65-byte uncompressed public key (0x04 prefix + 64 bytes X,Y coordinates)
@@ -66,5 +84,52 @@ mod tests {
         let mut bad = vec![0u8; 65];
         bad[0] = 0x03; // compressed prefix, not uncompressed
         assert!(derive_evm_address(&bad).is_err());
+    }
+
+    // ── Solana address tests ──────────────────────────────────────────
+
+    /// All-zero pubkey is the well-known Solana System Program address.
+    #[test]
+    fn test_solana_system_program_address() {
+        let zero = [0u8; 32];
+        let addr = derive_solana_address(&zero).unwrap();
+        assert_eq!(addr, "11111111111111111111111111111111");
+    }
+
+    /// Solana addresses are 32–44 base58 chars; verify length bounds.
+    #[test]
+    fn test_solana_address_length_bounds() {
+        let max_pubkey = [0xffu8; 32];
+        let addr = derive_solana_address(&max_pubkey).unwrap();
+        assert!((32..=44).contains(&addr.len()), "len = {}", addr.len());
+    }
+
+    #[test]
+    fn test_solana_invalid_length_too_short() {
+        let too_short = vec![0u8; 31];
+        assert!(derive_solana_address(&too_short).is_err());
+    }
+
+    #[test]
+    fn test_solana_invalid_length_too_long() {
+        let too_long = vec![0u8; 33];
+        assert!(derive_solana_address(&too_long).is_err());
+    }
+
+    /// Round-trip through bs58 to verify deterministic encoding.
+    #[test]
+    fn test_solana_address_is_deterministic() {
+        let pubkey: [u8; 32] = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+            0x1d, 0x1e, 0x1f, 0x20,
+        ];
+        let a = derive_solana_address(&pubkey).unwrap();
+        let b = derive_solana_address(&pubkey).unwrap();
+        assert_eq!(a, b);
+
+        // Round-trip via bs58 decode → matches original bytes.
+        let decoded = bs58::decode(&a).into_vec().unwrap();
+        assert_eq!(decoded, pubkey.to_vec());
     }
 }
