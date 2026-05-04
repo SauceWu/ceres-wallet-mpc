@@ -31,6 +31,10 @@ sha2 = "0.10"
 frost-ed25519 = "3"
 bs58 = "0.5"
 rand_core = "0.6"
+curve25519-dalek = { version = "4", features = ["precomputed-tables"] }
+
+[dev-dependencies]
+ed25519-dalek = { version = "2", features = ["hazmat"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
