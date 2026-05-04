@@ -1,6 +1,6 @@
 name: ceres_mpc
-description: "Ceres MPC SDK — two-party ECDSA keygen, recovery, signing"
-version: 0.1.1
+description: "Ceres MPC SDK — two-party ECDSA (EVM) and FROST-Ed25519 (Solana) keygen, recovery, signing"
+version: 0.2.0
 homepage: https://github.com/SauceWu/ceres-mpc
 repository: https://github.com/SauceWu/ceres-mpc
 issue_tracker: https://github.com/SauceWu/ceres-mpc/issues
@@ -8,7 +8,7 @@ topics:
   - mpc
   - crypto
   - wallet
-  - ecdsa
+  - solana
 
 environment:
   sdk: ^3.8.1

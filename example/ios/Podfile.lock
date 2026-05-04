@@ -1,5 +1,5 @@
 PODS:
-  - ceres_mpc (0.0.1):
+  - ceres_mpc (0.1.0):
     - Flutter
   - Flutter (1.0.0)
   - integration_test (0.0.1):
@@ -19,7 +19,7 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/integration_test/ios"
 
 SPEC CHECKSUMS:
-  ceres_mpc: c0e269ecf492698c1fe02224abab9bf0390e99f5
+  ceres_mpc: 1568cf6a63ff3aed4591af168cf61a1d2397487c
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
 

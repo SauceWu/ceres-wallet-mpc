@@ -7,21 +7,32 @@
 
 **English** | [中文](README_CN.md)
 
-Two-party ECDSA MPC SDK for Flutter.
+Two-party MPC SDK for Flutter — supports EVM (DKLs23 ECDSA) and Solana
+(FROST-Ed25519 / RFC 9591 Schnorr).
 
-Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) (DKLs23 protocol) with Rust core and Dart orchestration layer via [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge).
+Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) and
+[frost-ed25519](https://github.com/ZcashFoundation/frost) with Rust core and
+Dart orchestration via
+[flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge).
 
 ## Features
 
-- **Key Generation** -- Two-party ECDSA keygen with secp256k1, outputs Keyshare + EVM address
-- **Key Recovery** -- DKLs23 key refresh preserving the original on-chain address
-- **Transaction Signing** -- Two-party ECDSA signing, returns (r, s, recid)
-- **Backup & Restore** -- AES-256-GCM encrypted backup envelope derivation and decryption
-- **Key Export** -- Export MPC wallet to standard wallet by reconstructing full private key
-- **EVM Address Derivation** -- EIP-55 checksummed address from group public key
-- **Transport Agnostic** -- Host app injects its own network layer via `MpcTransport`
-- **Batch Message Optimization** -- Protocol messages batched per logical round, minimizing HTTP round-trips
-- **WebSocket Transport Example** -- Example app includes both HTTP and WebSocket transport reference implementations
+- **EVM (secp256k1 / DKLs23 ECDSA)**
+  - 2-party keygen → keyshare + EIP-55 checksummed `0x` address
+  - DKLs23 key refresh preserving the original on-chain address
+  - 2-party signing → `(r, s, recid)`
+  - Backup & restore (AES-256-GCM, HKDF-SHA256)
+  - MPC → standard wallet export
+- **Solana (ed25519 / FROST-Schnorr)** *(new in 0.2.0)*
+  - 2-party FROST DKG → keyshare + base58 SOL address
+  - 2-party FROST signing → 64-byte `r || s` Schnorr signature
+  - Backup envelope reuses the same AES-GCM container
+- **Curve-tagged keyshares** -- v2 envelope format with backward-compatible
+  fallback for v0.1.x (raw DKLs23) shares
+- **Transport agnostic** -- inject your own network via `MpcTransport`
+- **Batch message optimization** -- per-round batching (DKLs23 path)
+- **WebSocket transport example** -- both HTTP and WS reference impls in the
+  example app
 
 > **Server-side implementation?** See [Server Integration Guide](doc/SERVER_INTEGRATION.md) and the runnable server demo at [SauceWu/ceres-mpc-server-demo](https://github.com/SauceWu/ceres-mpc-server-demo).
 
@@ -69,9 +80,42 @@ Built on [sl-dkls23](https://github.com/silence-laboratories/dkls23) (DKLs23 pro
 ```yaml
 # pubspec.yaml
 dependencies:
-  ceres_mpc: ^0.1.0
+  ceres_mpc: ^0.2.0
   web_socket_channel: ^3.0.3 # only needed when using WebSocketMpcTransport
 ```
+
+### Solana keygen (new in 0.2.0)
+
+```dart
+import 'package:ceres_mpc/ceres_mpc.dart';
+
+final client = MpcClient(engine: engine, transport: transport);
+
+// EVM (default)
+final evmKey = await client.keygen();
+
+// Solana
+final solKey = await client.keygen(curve: Curve.ed25519);
+print(solKey.address);  // base58 SOL address, e.g. "9WzD..."
+print(solKey.curve);    // "ed25519"
+```
+
+Signing dispatches automatically based on the share's embedded curve tag — the
+host application does not need to specify a curve at sign time:
+
+```dart
+final sig = await client.sign(
+  mpcKeyId: solKey.mpcKeyId,
+  messageHash: hex.encode(serializedSolanaMessageBytes),
+  localEncryptedShare: solKey.localEncryptedShare,
+);
+print(sig.signatureHex); // 64-byte ed25519 signature, ready for Solana
+```
+
+> **Server requirement:** ed25519 sessions require the coordinator to also
+> implement FROST-Ed25519. The `curve` field is sent in the round-1 RPC params
+> and echoed in the `WireEnvelope` so the server knows which protocol to spin
+> up.
 
 ## Native Distribution
 
@@ -198,10 +242,12 @@ The DKLs23 protocol has 4 internal rounds, but batch optimization compresses thi
 
 | Crate | Purpose |
 |-------|---------|
-| [sl-dkls23](https://crates.io/crates/sl-dkls23) 1.0.0-beta | DKLs23 threshold ECDSA (keygen, sign, key refresh, key export) |
+| [sl-dkls23](https://crates.io/crates/sl-dkls23) 1.0.0-beta | DKLs23 threshold ECDSA (EVM keygen, sign, refresh, export) |
 | [sl-mpc-mate](https://crates.io/crates/sl-mpc-mate) 1.0.0-beta | MPC coordination (Relay trait, message routing) |
 | [k256](https://crates.io/crates/k256) 0.13 | secp256k1 elliptic curve primitives |
-| [tokio](https://crates.io/crates/tokio) 1 | Async runtime for protocol bridge |
+| [frost-ed25519](https://crates.io/crates/frost-ed25519) 3.0.0 | FROST(Ed25519, SHA-512) — RFC 9591 Schnorr threshold (Solana) |
+| [bs58](https://crates.io/crates/bs58) 0.5 | Base58 encoding for Solana addresses |
+| [tokio](https://crates.io/crates/tokio) 1 | Async runtime for DKLs23 relay |
 | [aes-gcm](https://crates.io/crates/aes-gcm) 0.10 | AES-256-GCM backup encryption |
 
 ## Running Tests
@@ -232,7 +278,9 @@ cd rust && cargo test
 - [x] DKLs23 migration (sl-dkls23 v1.0.0-beta)
 - [x] WebSocket transport (alongside HTTP)
 - [x] Batch message optimization (per-round batching via Notify signal)
-- [ ] Multi-chain support (beyond EVM)
+- [x] Solana support (FROST-Ed25519, 0.2.0)
+- [ ] ed25519 recovery / private key export (0.3.0)
+- [ ] Multi-chain support (Bitcoin / Tron / etc.)
 
 ## Security
 
