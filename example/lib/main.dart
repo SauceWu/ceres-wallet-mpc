@@ -9,7 +9,7 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Curve;
 import 'package:ceres_mpc/ceres_mpc.dart';
 import 'package:ceres_mpc/src/bridge/mpc_engine.dart';
 import 'package:ceres_mpc/src/rust/frb_generated.dart';
@@ -70,6 +70,9 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
   final _httpUrlController = TextEditingController(text: 'http://127.0.0.1:3000/rpc');
   final _wsUrlController = TextEditingController(text: 'ws://127.0.0.1:3000/ws');
   ExampleTransportMode _transportMode = ExampleTransportMode.mock;
+
+  // ── Curve selection ───────────────────────────────────────────
+  Curve _selectedCurve = Curve.secp256k1;
 
   // ── Stored state from keygen (used by sign/recovery/export) ──
   KeygenResult? _lastKeygen;
@@ -190,6 +193,53 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
     );
   }
 
+  /// Card for selecting the signing curve (EVM/secp256k1 or Solana/ed25519).
+  Widget _buildCurveCard() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Curve / Chain', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            SegmentedButton<Curve>(
+              segments: const [
+                ButtonSegment<Curve>(
+                  value: Curve.secp256k1,
+                  label: Text('EVM'),
+                ),
+                ButtonSegment<Curve>(
+                  value: Curve.ed25519,
+                  label: Text('Solana'),
+                ),
+              ],
+              selected: {_selectedCurve},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  _selectedCurve = selection.first;
+                  // Clear key state when switching curves
+                  _lastKeygen = null;
+                  _currentLocalShare = null;
+                  _backupEnvelope = null;
+                  _exported = false;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _selectedCurve == Curve.secp256k1
+                  ? 'DKLs23 ECDSA — 4-round keygen/sign/recovery. Returns EVM address (0x…).'
+                  : 'FROST Ed25519 Schnorr — 3-round keygen/recovery, 2-round sign. Returns SOL address (base58).',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _transportSnippet() {
     return switch (_transportMode) {
       ExampleTransportMode.mock =>
@@ -220,16 +270,17 @@ final client = MpcClient(
   // ── Example 1: Keygen ───────────────────────────────────────────
 
   /// Full keygen flow. After completion you get:
-  /// - address: EVM address derived from group public key
-  /// - publicKey: hex-encoded uncompressed secp256k1 public key
+  /// - address: EVM address (secp256k1) or SOL address (ed25519)
+  /// - publicKey: hex-encoded public key
   /// - localEncryptedShare: device key share (store in secure storage!)
   Future<void> _runKeygen() async {
     _clearLogs();
-    _log('=== Keygen Example ===');
+    final isSol = _selectedCurve == Curve.ed25519;
+    _log('=== Keygen Example (${isSol ? "Solana / ed25519" : "EVM / secp256k1"}) ===');
     _log('Starting keygen...');
 
     try {
-      final result = await _client.keygen();
+      final result = await _client.keygen(curve: _selectedCurve);
 
       setState(() {
         _lastKeygen = result;
@@ -238,7 +289,11 @@ final client = MpcClient(
       });
 
       _log('Keygen successful!');
-      _log('  address: ${result.address}');
+      if (isSol) {
+        _log('  SOL address: ${result.address}');
+      } else {
+        _log('  address: ${result.address}');
+      }
       _log('  publicKey: ${result.publicKey.substring(0, 20)}...');
       _log('  mpcKeyId: ${result.mpcKeyId}');
       _log('  rotationVersion: ${result.rotationVersion}');
@@ -297,7 +352,7 @@ final client = MpcClient(
       _log('  mpcKeyId: ${result.mpcKeyId}');
       _log('  localEncryptedShare updated (old one invalidated)');
       _log('');
-      _log('Address unchanged after recovery ✓');
+      _log('Address unchanged after recovery');
     } on MpcProtocolException catch (e) {
       _log('Protocol error: ${e.message}');
     } on MpcTransportException catch (e) {
@@ -311,10 +366,11 @@ final client = MpcClient(
 
   /// Sign flow. Requires:
   /// - mpcKeyId: identifies which key pair to use
-  /// - messageHash: keccak256 hash of the unsigned transaction
+  /// - messageHash: keccak256 hash (EVM) or raw transaction bytes hex (SOL)
   /// - localEncryptedShare: device key share from keygen/recovery
   ///
-  /// Returns (r, s, recid) to assemble an ECDSA signature.
+  /// EVM: Returns (r, s, recid) to assemble an ECDSA signature.
+  /// SOL: Returns 64-byte Schnorr signature via result.signatureHex (recid is null).
   Future<void> _runSign() async {
     _clearLogs();
     _log('=== Sign Example ===');
@@ -328,22 +384,35 @@ final client = MpcClient(
       return;
     }
 
-    final msgHash = 'aabbccdd' * 8; // 64-char hex hash (demo)
-    _log('Signing transaction...');
-    _log('  messageHash: ${msgHash.substring(0, 16)}...');
+    final isSol = _selectedCurve == Curve.ed25519;
+    final msgHash = 'aabbccdd' * 8; // 64-char hex (demo)
+    _log('Signing...');
+    _log('  messageHash: ${msgHash.substring(0, 16)}... (${isSol ? "raw tx bytes hex" : "keccak256"})');
     _log('  using localShare from ${_currentLocalShare == _lastKeygen!.localEncryptedShare ? "keygen" : "recovery"}');
 
     try {
       final result = await _client.sign(mpcKeyId: _lastKeygen!.mpcKeyId, messageHash: msgHash, localEncryptedShare: _currentLocalShare!);
 
       _log('Signing successful!');
-      _log('  r: ${result.r.substring(0, 20)}...');
-      _log('  s: ${result.s.substring(0, 20)}...');
-      _log('  recid: ${result.recid}');
-      _log('');
-      _log('Next steps:');
-      _log('  1. Assemble signed transaction with (r, s, recid)');
-      _log('  2. Broadcast to EVM chain');
+      if (result.recid == null) {
+        // ed25519 / FROST Schnorr
+        _log('  signatureHex: ${result.signatureHex.substring(0, 20)}... (64-byte Schnorr, ed25519)');
+        _log('  r: ${result.r.substring(0, 20)}...');
+        _log('  s: ${result.s.substring(0, 20)}...');
+        _log('');
+        _log('Next steps:');
+        _log('  1. Use signatureHex as the 64-byte Solana transaction signature');
+        _log('  2. Attach to serialized Solana transaction and broadcast');
+      } else {
+        // secp256k1 / ECDSA
+        _log('  r: ${result.r.substring(0, 20)}...');
+        _log('  s: ${result.s.substring(0, 20)}...');
+        _log('  recid: ${result.recid}');
+        _log('');
+        _log('Next steps:');
+        _log('  1. Assemble signed transaction with (r, s, recid)');
+        _log('  2. Broadcast to EVM chain');
+      }
     } on MpcProtocolException catch (e) {
       _log('Protocol error: ${e.message}');
     } on MpcTransportException catch (e) {
@@ -435,24 +504,36 @@ final client = MpcClient(
       appBar: AppBar(title: const Text('ceres_mpc Example')),
       body: Column(
         children: [
-          _buildTransportCard(),
-          // Action buttons
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ElevatedButton(onPressed: _runKeygen, child: const Text('1. Keygen')),
-                ElevatedButton(onPressed: _hasKey && !_exported ? _runSign : null, child: const Text('2. Sign')),
-                ElevatedButton(onPressed: _hasKey && !_exported && _backupEnvelope != null ? _runRecovery : null, child: const Text('3. Recovery')),
-                ElevatedButton(
-                  onPressed: _hasKey && !_exported ? _runExport : null,
-                  style: ElevatedButton.styleFrom(backgroundColor: _hasKey && !_exported ? Colors.orange : null, foregroundColor: _hasKey && !_exported ? Colors.white : null),
-                  child: const Text('4. Export'),
-                ),
-                OutlinedButton(onPressed: _runErrorDemo, child: const Text('Error Handling')),
-              ],
+          // Controls area — scrollable so it never overflows on small screens.
+          // Flexible (not Expanded) lets it shrink when the log area needs space.
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildTransportCard(),
+                  _buildCurveCard(),
+                  // Action buttons
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ElevatedButton(onPressed: _runKeygen, child: const Text('1. Keygen')),
+                        ElevatedButton(onPressed: _hasKey && !_exported ? _runSign : null, child: const Text('2. Sign')),
+                        ElevatedButton(onPressed: _hasKey && !_exported && _backupEnvelope != null ? _runRecovery : null, child: const Text('3. Recovery')),
+                        ElevatedButton(
+                          onPressed: _hasKey && !_exported ? _runExport : null,
+                          style: ElevatedButton.styleFrom(backgroundColor: _hasKey && !_exported ? Colors.orange : null, foregroundColor: _hasKey && !_exported ? Colors.white : null),
+                          child: const Text('4. Export'),
+                        ),
+                        OutlinedButton(onPressed: _runErrorDemo, child: const Text('Error Handling')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const Divider(),

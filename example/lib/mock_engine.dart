@@ -21,6 +21,7 @@ import 'package:ceres_mpc/src/dto/mpc_dtos.dart';
 /// `status: "completed"` on the final round.
 class MockMpcEngine implements MpcEngine {
   final _sessionRounds = <String, int>{};
+  final _sessionCurves = <String, String>{};
   final _rand = Random(42);
 
   String _mockHex(int length) {
@@ -41,14 +42,41 @@ class MockMpcEngine implements MpcEngine {
     });
   }
 
+  /// Returns a SharedEnvelope v2 JSON string for ed25519 key shares.
+  String _mockShareEnvelope() {
+    return jsonEncode({
+      'v': 2,
+      'curve': 'ed25519',
+      'share': base64Encode(List.generate(32, (_) => _rand.nextInt(256))),
+    });
+  }
+
+  /// Parses the curve from a serverPayload JSON string.
+  /// Returns the 'curve' field if present, otherwise 'secp256k1'.
+  String _parseCurve(String serverPayload) {
+    try {
+      final Map<String, dynamic> parsed;
+      final decoded = jsonDecode(serverPayload);
+      if (decoded is Map<String, dynamic>) {
+        parsed = decoded;
+      } else {
+        return 'secp256k1';
+      }
+      return parsed['curve'] as String? ?? 'secp256k1';
+    } catch (_) {
+      return 'secp256k1';
+    }
+  }
+
   MpcRoundResult _roundOrComplete(
     String sessionId,
     String protocol,
     int round,
+    int maxRounds,
     Map<String, dynamic> Function() completedPayload,
   ) {
     _sessionRounds[sessionId] = round;
-    if (round < 4) {
+    if (round < maxRounds) {
       return MpcRoundResult(
         status: 'continue',
         round: round,
@@ -56,6 +84,7 @@ class MockMpcEngine implements MpcEngine {
       );
     }
     _sessionRounds.remove(sessionId);
+    _sessionCurves.remove(sessionId);
     return MpcRoundResult(
       status: 'completed',
       round: round,
@@ -71,18 +100,46 @@ class MockMpcEngine implements MpcEngine {
     int round,
     String serverPayload,
   ) async {
+    // At round 1, detect and store the curve for this session
+    if (round == 1) {
+      final curve = _parseCurve(serverPayload);
+      _sessionCurves[sessionId] = curve;
+    }
+
+    final curve = _sessionCurves[sessionId] ?? 'secp256k1';
+    final isSol = curve == 'ed25519';
+    final maxRounds = isSol ? 3 : 4;
     final mockKeyId = 'mpc_${_mockHex(8)}';
-    return _roundOrComplete(sessionId, 'dkg', round, () => {
-      'mpc_key_id': mockKeyId,
-      'address': '0x${_mockHex(40)}',
-      'public_key': '04${_mockHex(128)}',
-      'curve': 'secp256k1',
-      'threshold': 2,
-      'key_ref': mockKeyId,
-      'backup_state': 'pending',
-      'rotation_version': 1,
-      'local_encrypted_share':
-          base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
+
+    return _roundOrComplete(sessionId, 'dkg', round, maxRounds, () {
+      if (isSol) {
+        const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+        final solAddr = List.generate(44, (_) => alphabet[_rand.nextInt(alphabet.length)]).join();
+        return {
+          'mpc_key_id': mockKeyId,
+          'address': solAddr,
+          'public_key': _mockHex(64),
+          'curve': 'ed25519',
+          'threshold': 2,
+          'key_ref': mockKeyId,
+          'backup_state': 'pending',
+          'rotation_version': 1,
+          'local_encrypted_share': _mockShareEnvelope(),
+        };
+      } else {
+        return {
+          'mpc_key_id': mockKeyId,
+          'address': '0x${_mockHex(40)}',
+          'public_key': '04${_mockHex(128)}',
+          'curve': 'secp256k1',
+          'threshold': 2,
+          'key_ref': mockKeyId,
+          'backup_state': 'pending',
+          'rotation_version': 1,
+          'local_encrypted_share':
+              base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
+        };
+      }
     });
   }
 
@@ -96,18 +153,47 @@ class MockMpcEngine implements MpcEngine {
     String? backupShare,
     int? currentRotationVersion,
   }) async {
-    return _roundOrComplete(sessionId, 'rotation', round, () => {
-      'mpc_key_id': sessionId,
-      'address': '0x${_mockHex(40)}',
-      'public_key': '04${_mockHex(128)}',
-      'curve': 'secp256k1',
-      'threshold': 2,
-      'key_ref': sessionId,
-      'backup_state': 'pending',
-      'rotation_version': (currentRotationVersion ?? 1) + 1,
-      'local_encrypted_share':
-          base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
-      'encrypted_backup_share': null,
+    // At round 1, detect and store the curve for this session
+    if (round == 1) {
+      final curve = _parseCurve(serverPayload);
+      _sessionCurves[sessionId] = curve;
+    }
+
+    final curve = _sessionCurves[sessionId] ?? 'secp256k1';
+    final isSol = curve == 'ed25519';
+    final maxRounds = isSol ? 3 : 4;
+
+    return _roundOrComplete(sessionId, 'rotation', round, maxRounds, () {
+      if (isSol) {
+        const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+        final solAddr = List.generate(44, (_) => alphabet[_rand.nextInt(alphabet.length)]).join();
+        return {
+          'mpc_key_id': sessionId,
+          'address': solAddr,
+          'public_key': _mockHex(64),
+          'curve': 'ed25519',
+          'threshold': 2,
+          'key_ref': sessionId,
+          'backup_state': 'pending',
+          'rotation_version': (currentRotationVersion ?? 1) + 1,
+          'local_encrypted_share': _mockShareEnvelope(),
+          'encrypted_backup_share': null,
+        };
+      } else {
+        return {
+          'mpc_key_id': sessionId,
+          'address': '0x${_mockHex(40)}',
+          'public_key': '04${_mockHex(128)}',
+          'curve': 'secp256k1',
+          'threshold': 2,
+          'key_ref': sessionId,
+          'backup_state': 'pending',
+          'rotation_version': (currentRotationVersion ?? 1) + 1,
+          'local_encrypted_share':
+              base64Encode(List.generate(128, (_) => _rand.nextInt(256))),
+          'encrypted_backup_share': null,
+        };
+      }
     });
   }
 
@@ -121,10 +207,33 @@ class MockMpcEngine implements MpcEngine {
     String? share,
     String? messageHashHex,
   }) async {
-    return _roundOrComplete(sessionId, 'dsg', round, () => {
-      'r': _mockHex(64),
-      's': _mockHex(64),
-      'recid': _rand.nextInt(2),
+    // At round 1, detect and store the curve for this session
+    if (round == 1) {
+      final curve = _parseCurve(serverPayload);
+      _sessionCurves[sessionId] = curve;
+    }
+
+    final curve = _sessionCurves[sessionId] ?? 'secp256k1';
+    final isSol = curve == 'ed25519';
+    final maxRounds = isSol ? 2 : 4;
+
+    return _roundOrComplete(sessionId, 'dsg', round, maxRounds, () {
+      if (isSol) {
+        // FROST sign completion: no recid, curve tag required.
+        // NOTE: SignResult.fromJson expects no snake_case conversion for sign.
+        return {
+          'r': _mockHex(64),
+          's': _mockHex(64),
+          'recid': null,
+          'curve': 'ed25519',
+        };
+      } else {
+        return {
+          'r': _mockHex(64),
+          's': _mockHex(64),
+          'recid': _rand.nextInt(2),
+        };
+      }
     });
   }
 
