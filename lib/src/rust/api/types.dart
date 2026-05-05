@@ -27,8 +27,8 @@ enum Curve {
 }
 
 /// 32 字节消息摘要的安全类型包装。
-/// 防止将任意 Vec<u8> 直接传入签名函数。
-/// 不实现 From<Vec<u8>>、From<&[u8]> 或 From<[u8; 32]>。
+/// 防止将任意 `Vec<u8>` 直接传入签名函数。
+/// 不实现 `From<Vec<u8>>`、`From<&[u8]>` 或 `From<[u8; 32]>`。
 class MessageDigest {
   final U8Array32 field0;
 
