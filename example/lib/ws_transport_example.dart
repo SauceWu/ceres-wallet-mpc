@@ -174,17 +174,10 @@ class WebSocketMpcTransport implements MpcTransport {
     final completer = _pendingRequests.remove(id);
     if (completer == null) return;
 
-    if (response.containsKey('error')) {
-      final error = response['error'] as Map<String, dynamic>;
-      completer.completeError(
-        WsTransportException(
-          error['message']?.toString() ?? 'Server error',
-          code: error['code'] as int?,
-        ),
-      );
-    } else {
-      completer.complete(text);
-    }
+    // Always complete with the raw JSON text — error parsing is the caller's job.
+    // Throwing here would wrap JSON-RPC errors as transport exceptions and lose the
+    // structured error code/message that MpcClient._rpcCall needs to throw MpcRpcException.
+    completer.complete(text);
   }
 
   void _handleStreamError(Object error, StackTrace st) {

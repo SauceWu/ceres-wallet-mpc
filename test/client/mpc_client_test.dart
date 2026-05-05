@@ -192,6 +192,81 @@ void main() {
       expect(result.rotationVersion, equals(2));
       expect(result.localEncryptedShare, equals('new_encrypted_share'));
     });
+
+    test('normalises mpcKeyId when FROST engine returns recovery session_id', () async {
+      // FROST (ed25519) recovery: server returns status:completed with no serverPayload
+      // on round 3, then engine.recover(session, 0, '') is called (recover_finalize).
+      // The engine bug: recover_finalize sets mpc_key_id = recovery_session_id ≠ keygen_id.
+      // MpcClient must normalise to the input mpcKeyId.
+      when(() => mockEngine.decryptBackupShare(any(), any()))
+          .thenAnswer((_) async => 'decrypted_backup_share');
+
+      when(() => mockTransport.send(any()))
+          .thenAnswer((invocation) async {
+        final payload = jsonDecode(invocation.positionalArguments[0] as String)
+            as Map<String, dynamic>;
+        final params = payload['params'] as Map<String, dynamic>;
+        final round = params['round'] as int? ?? 1;
+        final id = payload['id'] as int;
+
+        if (round == 1) {
+          return _rpcOk({
+            'sessionId': 'recovery_session_xyz',
+            'serverPayload': {'round': 1, 'curve': 'ed25519'},
+          }, id: id);
+        } else if (round == 2) {
+          return _rpcOk({
+            'serverPayload': {'round': 2, 'curve': 'ed25519'},
+          }, id: id);
+        } else {
+          // Round 3: FROST server signals completion with no serverPayload
+          return _rpcOk({
+            'status': 'completed',
+            'mpcKeyId': 'original_keygen_key_id',
+          }, id: id);
+        }
+      });
+
+      when(() => mockEngine.recover(
+        'recovery_session_xyz', 1, any(),
+        backupShare: 'decrypted_backup_share',
+        currentRotationVersion: 1,
+      )).thenAnswer((_) async => const MpcRoundResult(
+            status: 'continue', round: 1,
+            clientPayload: 'client_r1_payload',
+          ));
+
+      when(() => mockEngine.recover('recovery_session_xyz', 2, any()))
+          .thenAnswer((_) async => const MpcRoundResult(
+                status: 'continue', round: 2,
+                clientPayload: 'client_r2_payload',
+              ));
+
+      // recover_finalize: engine incorrectly returns recovery session_id as mpc_key_id
+      when(() => mockEngine.recover('recovery_session_xyz', 0, ''))
+          .thenAnswer((_) async => MpcRoundResult(
+                status: 'completed', round: 0,
+                clientPayload: jsonEncode({
+                  'mpc_key_id': 'recovery_session_xyz', // wrong: session id, not key id
+                  'address': 'SomeBase58Address',
+                  'public_key': 'pubkey_hex',
+                  'rotation_version': 2,
+                  'local_encrypted_share': 'new_frost_share',
+                }),
+              ));
+
+      final result = await client.recover(
+        mpcKeyId: 'original_keygen_key_id',
+        encryptedBackupShare: 'encrypted_backup_blob',
+        userBackupSecret: 'user_secret',
+        currentRotationVersion: 1,
+      );
+
+      expect(result.mpcKeyId, equals('original_keygen_key_id'),
+          reason: 'mpcKeyId must be the original keygen ID, not the recovery session ID');
+      expect(result.rotationVersion, equals(2));
+      expect(result.localEncryptedShare, equals('new_frost_share'));
+    });
   });
 
   group('sign', () {

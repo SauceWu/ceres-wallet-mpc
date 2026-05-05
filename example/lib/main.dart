@@ -21,7 +21,7 @@ import 'ws_transport_example.dart';
 
 /// Set to true to use mock engine (no Rust crypto, for UI testing).
 /// Set to false to use real Rust engine (requires real server).
-const _useMockEngine = true;
+const _useMockEngine = false;
 
 enum ExampleTransportMode {
   mock('Mock', 'Local demo transport with no backend required.'),
@@ -343,14 +343,38 @@ final client = MpcClient(
     try {
       final result = await _client.recover(mpcKeyId: _lastKeygen!.mpcKeyId, encryptedBackupShare: _backupEnvelope!, userBackupSecret: 'demo_backup_secret_123', currentRotationVersion: _lastKeygen!.rotationVersion);
 
-      // Update local share (old one is now invalid after rotation)
-      setState(() => _currentLocalShare = result.localEncryptedShare);
+      // Update local share and rotation version (old share is now invalid).
+      // Also re-derive the backup envelope so the next recovery uses the new share.
+      setState(() {
+        _currentLocalShare = result.localEncryptedShare;
+        _lastKeygen = KeygenResult(
+          mpcKeyId: _lastKeygen!.mpcKeyId,
+          address: result.address,
+          publicKey: result.publicKey,
+          curve: _lastKeygen!.curve,
+          threshold: _lastKeygen!.threshold,
+          keyRef: _lastKeygen!.keyRef,
+          backupState: _lastKeygen!.backupState,
+          rotationVersion: result.rotationVersion,
+          localEncryptedShare: result.localEncryptedShare,
+        );
+      });
+
+      // Re-derive backup envelope from the new share so future recovery works.
+      final newEnvelope = await _engine.deriveBackupEnvelope(
+        result.localEncryptedShare,
+        'demo_backup_secret_123',
+        DateTime.now().toUtc().toIso8601String(),
+      );
+      setState(() => _backupEnvelope =
+          '{"version":"${newEnvelope.version}","algorithm":"${newEnvelope.algorithm}","created_at":"${newEnvelope.createdAt}","payload":"${newEnvelope.payload}"}');
 
       _log('Recovery successful!');
       _log('  address: ${result.address}');
       _log('  rotationVersion: ${result.rotationVersion}');
       _log('  mpcKeyId: ${result.mpcKeyId}');
       _log('  localEncryptedShare updated (old one invalidated)');
+      _log('  backupEnvelope re-derived from new share');
       _log('');
       _log('Address unchanged after recovery');
     } on MpcProtocolException catch (e) {

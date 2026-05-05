@@ -144,6 +144,19 @@ class MpcClient {
       final payload =
           jsonDecode(currentResult.clientPayload!) as Map<String, dynamic>;
       var result = RecoveryResult.fromJson(_snakeToCamelKeys(payload));
+      // Recovery never changes key identity. The FROST engine uses the recovery
+      // session_id as mpcKeyId, which differs from the original keygen ID.
+      // Always normalise to the authoritative input mpcKeyId.
+      if (result.mpcKeyId != mpcKeyId) {
+        result = RecoveryResult(
+          mpcKeyId: mpcKeyId,
+          address: result.address,
+          publicKey: result.publicKey,
+          rotationVersion: result.rotationVersion,
+          localEncryptedShare: result.localEncryptedShare,
+          encryptedBackupShare: result.encryptedBackupShare,
+        );
+      }
 
       if (newUserBackupSecret != null) {
         final envelope = await _engine.deriveBackupEnvelope(
