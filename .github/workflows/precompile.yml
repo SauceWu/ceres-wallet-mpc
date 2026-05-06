@@ -55,7 +55,7 @@ jobs:
 
           dart run bin/build_tool.dart precompile-binaries \
             --manifest-dir=../../rust \
-            --repository=SauceWu/ceres-mpc \
+            --repository=SauceWu/ceres-wallet-mpc \
             --target=aarch64-apple-ios \
             --target=aarch64-apple-ios-sim \
             --target=x86_64-apple-ios \
