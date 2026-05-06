@@ -7,10 +7,7 @@ use tokio::task::JoinHandle;
 
 use crate::api::types::MessageDigest;
 use frost_ed25519::{
-    keys::{
-        dkg::{round1 as dkg_r1, round2 as dkg_r2},
-        KeyPackage, PublicKeyPackage,
-    },
+    keys::{KeyPackage, PublicKeyPackage},
     round1::SigningNonces,
     Identifier,
 };
@@ -91,14 +88,11 @@ pub fn frost_server_identifier() -> Identifier {
 
 pub struct FrostKeygenSession {
     pub created_at: Instant,
-    /// Set after part1 completes (round 1 client step).
-    pub round1_secret: Option<dkg_r1::SecretPackage>,
-    /// Server's round1 package, captured in round 1 client step.
-    pub peer_round1_pkg: Option<dkg_r1::Package>,
-    /// Set after part2 completes (round 2 client step).
-    pub round2_secret: Option<dkg_r2::SecretPackage>,
-    /// Server's round2 package addressed to client, captured in round 2 step.
-    pub peer_round2_pkg: Option<dkg_r2::Package>,
+    pub lib_state: ceres_wallet_frost_mpc::KeygenSessionState,
+    /// Most recent server inner-encoded payload not yet consumed by the next library call.
+    /// After round 1: holds server's r1 inner (used by keygen_part2 in round 2).
+    /// After round 2: holds server's r2 inner (used by keygen_part3 in finalize).
+    pub pending_server_inner: String,
 }
 
 pub struct FrostSignSession {
@@ -117,30 +111,16 @@ pub struct FrostSignSession {
     pub verifying_key_hex: String,
 }
 
-/// FROST refresh (recovery) session — mirrors `FrostKeygenSession` but carries
-/// the OLD KeyPackage / PublicKeyPackage required by `refresh_dkg_shares` to
-/// produce a new keyshare that preserves the original verifying_key.
-///
-/// frost-ed25519 v3 reuses `dkg::round1` / `dkg::round2` types for refresh
-/// (no separate `refresh::round1` module), so the secret/peer package fields
-/// share the same types as `FrostKeygenSession`.
 pub struct FrostRecoverySession {
     pub created_at: Instant,
     /// Rotation version at start of refresh; `+1` written into the
     /// `RecoveryCompletedPayload` on finalize (round 0).
     pub current_rotation_version: i32,
-    /// OLD KeyPackage — required as input to `refresh_dkg_shares`.
-    pub old_key_package: KeyPackage,
-    /// OLD PublicKeyPackage — required as input to `refresh_dkg_shares`.
-    pub old_public_key_package: PublicKeyPackage,
-    /// Set after `refresh_dkg_part1` (round 1 client step).
-    pub round1_secret: Option<dkg_r1::SecretPackage>,
-    /// Server's round1 package, captured in round 1.
-    pub peer_round1_pkg: Option<dkg_r1::Package>,
-    /// Set after `refresh_dkg_part2` (round 2 client step).
-    pub round2_secret: Option<dkg_r2::SecretPackage>,
-    /// Server's round2 package addressed to client, captured in round 2.
-    pub peer_round2_pkg: Option<dkg_r2::Package>,
+    pub lib_state: ceres_wallet_frost_mpc::RecoverySessionState,
+    /// Most recent server inner-encoded payload not yet consumed by the next library call.
+    /// After round 1: holds server's r1 inner (used by recovery_part2 in round 2).
+    /// After round 2: holds server's r2 inner (used by recovery_part3 in finalize).
+    pub pending_server_inner: String,
 }
 
 pub static FROST_KEYGEN_SESSIONS: Lazy<Mutex<HashMap<String, FrostKeygenSession>>> =

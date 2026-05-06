@@ -29,6 +29,7 @@ aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
 frost-ed25519 = "3"
+ceres_wallet_frost_mpc = { path = "../../../rust_project/ceres_wallet_frost_mpc" }
 bs58 = "0.5"
 rand_core = "0.6"
 curve25519-dalek = { version = "4", features = ["precomputed-tables"] }

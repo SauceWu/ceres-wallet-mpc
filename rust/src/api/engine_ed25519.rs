@@ -25,13 +25,10 @@ use std::time::Instant;
 
 use frost_ed25519::{
     self as frost,
-    keys::{
-        dkg::{self, round1 as dkg_r1, round2 as dkg_r2},
-        refresh, KeyPackage, PublicKeyPackage,
-    },
+    keys::{KeyPackage, PublicKeyPackage},
     round1 as sign_r1,
     round2 as sign_r2,
-    Identifier, Signature, SigningPackage,
+    Signature, SigningPackage,
 };
 
 use crate::api::address::derive_solana_address;
@@ -46,17 +43,7 @@ use crate::session::{
     FROST_SIGN_SESSIONS, SESSION_TTL,
 };
 
-// ── Wire payload types ──────────────────────────────────────────────────────
-
-#[derive(Serialize, Deserialize)]
-struct DkgR1Payload {
-    round1_pkg: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DkgR2Payload {
-    round2_pkg: String,
-}
+// ── Wire payload types (sign only — keygen/recovery handled by library) ────────
 
 #[derive(Serialize, Deserialize)]
 struct SignR1Payload {
@@ -67,16 +54,6 @@ struct SignR1Payload {
 struct SignR2Payload {
     signing_pkg: String,
     sig_share: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct RefreshR1Payload {
-    refresh_round1_pkg: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct RefreshR2Payload {
-    refresh_round2_pkg: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -101,20 +78,20 @@ fn decode_payload<T: for<'de> Deserialize<'de>>(env: &WireEnvelope) -> Result<T,
     serde_json::from_slice(&bytes).map_err(|e| format!("invalid round payload JSON: {e}"))
 }
 
-fn encode_wire_payload<T: Serialize>(
+/// Wrap an already-encoded inner payload (base64(json(…)) from library) into a WireEnvelope.
+fn encode_wire_payload_from_inner(
     session_id: &str,
     protocol: ProtocolType,
     round: u8,
-    inner: &T,
+    inner_encoded: &str,
 ) -> Result<String, String> {
-    let inner_json = serde_json::to_vec(inner).map_err(|e| e.to_string())?;
     let mut env = WireEnvelope::new(
         session_id.to_string(),
         protocol,
         round,
         0,
         Some(1),
-        B64.encode(&inner_json),
+        inner_encoded.to_string(),
         None,
     );
     env.curve = Some("ed25519".to_string());
@@ -189,8 +166,6 @@ macro_rules! impl_frost_infallible_ser {
     };
 }
 
-impl_frost_fallible_ser!(dkg_r1::Package);
-impl_frost_fallible_ser!(dkg_r2::Package);
 impl_frost_fallible_ser!(KeyPackage);
 impl_frost_fallible_ser!(PublicKeyPackage);
 impl_frost_fallible_ser!(sign_r1::SigningCommitments);
@@ -218,12 +193,7 @@ fn extract_share_material(local_share: &str) -> Result<(KeyPackage, PublicKeyPac
 }
 
 fn build_share_envelope(kp: &KeyPackage, pkp: &PublicKeyPackage) -> Result<String, String> {
-    let mat = Ed25519KeyMaterial {
-        kp: B64.encode(kp.serialize_frost()?),
-        pkp: B64.encode(pkp.serialize_frost()?),
-    };
-    let mat_json = serde_json::to_vec(&mat).map_err(|e| e.to_string())?;
-    ShareEnvelope::new(crate::api::types::Curve::Ed25519, &mat_json).encode()
+    ceres_wallet_frost_mpc::build_share_envelope(kp, pkp).map_err(|e| e.to_string())
 }
 
 // ── DKG ─────────────────────────────────────────────────────────────────────
@@ -247,103 +217,50 @@ pub fn keygen(session_id: String, round: i32, server_payload: String) -> Result<
 
 fn keygen_round1(session_id: String, server_payload: &str) -> Result<String, String> {
     let env = parse_wire(server_payload)?;
-    let r1: DkgR1Payload = decode_payload(&env)?;
-    let server_r1_pkg = deser_pkg::<dkg_r1::Package>(&r1.round1_pkg)?;
+    let server_r1_inner = env.payload.clone();
 
     let mut rng = OsRng;
-    let (round1_secret, own_round1_pkg) = dkg::part1(
-        frost_client_identifier(),
-        2u16, // max_signers
-        2u16, // min_signers
-        &mut rng,
-    )
-    .map_err(|e| format!("frost dkg part1: {e}"))?;
+    let (lib_state, client_inner) = ceres_wallet_frost_mpc::keygen_part1(1, &mut rng)
+        .map_err(|e| format!("keygen_part1: {e}"))?;
 
-    let session = FrostKeygenSession {
-        created_at: Instant::now(),
-        round1_secret: Some(round1_secret),
-        peer_round1_pkg: Some(server_r1_pkg),
-        round2_secret: None,
-        peer_round2_pkg: None,
-    };
-    FROST_KEYGEN_SESSIONS
-        .lock()
-        .unwrap()
-        .insert(session_id.clone(), session);
+    FROST_KEYGEN_SESSIONS.lock().unwrap().insert(
+        session_id.clone(),
+        FrostKeygenSession { created_at: Instant::now(), lib_state, pending_server_inner: server_r1_inner },
+    );
 
-    let payload = DkgR1Payload {
-        round1_pkg: ser_pkg(&own_round1_pkg)?,
-    };
-    let env_json = encode_wire_payload(&session_id, ProtocolType::Dkg, 1, &payload)?;
+    let env_json = encode_wire_payload_from_inner(&session_id, ProtocolType::Dkg, 1, &client_inner)?;
     make_in_progress(&session_id, ProtocolType::Dkg, 1, env_json)
 }
 
 fn keygen_round2(session_id: String, server_payload: &str) -> Result<String, String> {
     let env = parse_wire(server_payload)?;
-    let r2: DkgR2Payload = decode_payload(&env)?;
-    let server_r2_pkg = deser_pkg::<dkg_r2::Package>(&r2.round2_pkg)?;
+    let server_r2_inner = env.payload.clone();
 
-    let mut sessions = FROST_KEYGEN_SESSIONS.lock().unwrap();
-    let session = sessions
-        .get_mut(&session_id)
+    let session = FROST_KEYGEN_SESSIONS
+        .lock().unwrap().remove(&session_id)
         .ok_or_else(|| format!("ed25519 keygen session not found: {session_id}"))?;
 
-    let round1_secret = session
-        .round1_secret
-        .take()
-        .ok_or("ed25519 keygen session missing round1_secret")?;
-    let peer_r1 = session
-        .peer_round1_pkg
-        .as_ref()
-        .ok_or("ed25519 keygen session missing peer_round1_pkg")?;
+    let (new_lib_state, client_inner) =
+        ceres_wallet_frost_mpc::keygen_part2(session.lib_state, &session.pending_server_inner)
+            .map_err(|e| format!("keygen_part2: {e}"))?;
 
-    let mut peer_r1_map: BTreeMap<Identifier, dkg_r1::Package> = BTreeMap::new();
-    peer_r1_map.insert(frost_server_identifier(), peer_r1.clone());
+    FROST_KEYGEN_SESSIONS.lock().unwrap().insert(
+        session_id.clone(),
+        FrostKeygenSession { created_at: session.created_at, lib_state: new_lib_state, pending_server_inner: server_r2_inner },
+    );
 
-    let (round2_secret, round2_pkgs_for_others) = dkg::part2(round1_secret, &peer_r1_map)
-        .map_err(|e| format!("frost dkg part2: {e}"))?;
-
-    let own_round2_pkg = round2_pkgs_for_others
-        .get(&frost_server_identifier())
-        .ok_or("frost dkg part2: missing round2 package for server")?
-        .clone();
-
-    session.round2_secret = Some(round2_secret);
-    session.peer_round2_pkg = Some(server_r2_pkg);
-
-    let payload = DkgR2Payload {
-        round2_pkg: ser_pkg(&own_round2_pkg)?,
-    };
-    drop(sessions);
-
-    let env_json = encode_wire_payload(&session_id, ProtocolType::Dkg, 2, &payload)?;
+    let env_json = encode_wire_payload_from_inner(&session_id, ProtocolType::Dkg, 2, &client_inner)?;
     make_in_progress(&session_id, ProtocolType::Dkg, 2, env_json)
 }
 
 fn keygen_finalize(session_id: String) -> Result<String, String> {
     let session = FROST_KEYGEN_SESSIONS
-        .lock()
-        .unwrap()
-        .remove(&session_id)
+        .lock().unwrap().remove(&session_id)
         .ok_or_else(|| format!("ed25519 keygen session not found: {session_id}"))?;
 
-    let round2_secret = session
-        .round2_secret
-        .ok_or("ed25519 keygen session missing round2_secret")?;
-    let peer_r1 = session
-        .peer_round1_pkg
-        .ok_or("ed25519 keygen session missing peer_round1_pkg")?;
-    let peer_r2 = session
-        .peer_round2_pkg
-        .ok_or("ed25519 keygen session missing peer_round2_pkg")?;
-
-    let mut r1_map = BTreeMap::new();
-    r1_map.insert(frost_server_identifier(), peer_r1);
-    let mut r2_map = BTreeMap::new();
-    r2_map.insert(frost_server_identifier(), peer_r2);
-
-    let (key_package, public_key_package) = dkg::part3(&round2_secret, &r1_map, &r2_map)
-        .map_err(|e| format!("frost dkg part3: {e}"))?;
+    let (key_package, public_key_package) =
+        ceres_wallet_frost_mpc::keygen_part3(session.lib_state, &session.pending_server_inner)
+            .map_err(|e| format!("keygen_part3: {e}"))?;
 
     let vk_bytes = public_key_package
         .verifying_key()
@@ -441,7 +358,11 @@ fn sign_round1(
     let payload = SignR1Payload {
         commitments: ser_pkg(&own_commitments)?,
     };
-    let env_json = encode_wire_payload(&session_id, ProtocolType::Dsg, 1, &payload)?;
+    let inner_encoded = {
+        let json = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
+        B64.encode(&json)
+    };
+    let env_json = encode_wire_payload_from_inner(&session_id, ProtocolType::Dsg, 1, &inner_encoded)?;
     make_in_progress(&session_id, ProtocolType::Dsg, 1, env_json)
 }
 
@@ -546,45 +467,30 @@ fn recover_round1(
     current_rotation_version: Option<i32>,
 ) -> Result<String, String> {
     let env = parse_wire(server_payload)?;
-    let r1: RefreshR1Payload = decode_payload(&env)?;
-    let server_r1_pkg = deser_pkg::<dkg_r1::Package>(&r1.refresh_round1_pkg)?;
+    let server_r1_inner = env.payload.clone();
 
     let bs = backup_share.ok_or("backup_share required for round 1")?;
-    let rv = current_rotation_version
-        .ok_or("current_rotation_version required for round 1")?;
+    let rv = current_rotation_version.ok_or("current_rotation_version required for round 1")?;
 
-    // `extract_share_material` enforces ShareEnvelope.curve == Ed25519
-    // (returns "share is not an ed25519 keyshare" otherwise).
+    // extract_share_material enforces ShareEnvelope.curve == Ed25519.
     let (old_kp, old_pkp) = extract_share_material(&bs)?;
 
     let mut rng = OsRng;
-    let (round1_secret, own_round1_pkg) = refresh::refresh_dkg_part1(
-        frost_client_identifier(),
-        2u16, // max_signers
-        2u16, // min_signers
-        &mut rng,
-    )
-    .map_err(|e| format!("frost refresh part1: {e}"))?;
+    let (lib_state, client_inner) =
+        ceres_wallet_frost_mpc::recovery_part1(old_kp, old_pkp, &mut rng)
+            .map_err(|e| format!("recovery_part1: {e}"))?;
 
-    let session = FrostRecoverySession {
-        created_at: Instant::now(),
-        current_rotation_version: rv,
-        old_key_package: old_kp,
-        old_public_key_package: old_pkp,
-        round1_secret: Some(round1_secret),
-        peer_round1_pkg: Some(server_r1_pkg),
-        round2_secret: None,
-        peer_round2_pkg: None,
-    };
-    FROST_RECOVERY_SESSIONS
-        .lock()
-        .unwrap()
-        .insert(session_id.clone(), session);
+    FROST_RECOVERY_SESSIONS.lock().unwrap().insert(
+        session_id.clone(),
+        FrostRecoverySession {
+            created_at: Instant::now(),
+            current_rotation_version: rv,
+            lib_state,
+            pending_server_inner: server_r1_inner,
+        },
+    );
 
-    let payload = RefreshR1Payload {
-        refresh_round1_pkg: ser_pkg(&own_round1_pkg)?,
-    };
-    let env_json = encode_wire_payload(&session_id, ProtocolType::Rotation, 1, &payload)?;
+    let env_json = encode_wire_payload_from_inner(&session_id, ProtocolType::Rotation, 1, &client_inner)?;
     make_in_progress(&session_id, ProtocolType::Rotation, 1, env_json)
 }
 
@@ -595,9 +501,7 @@ fn recover_round2(session_id: String, server_payload: &str) -> Result<String, St
         if let Some(s) = sessions.get(&session_id) {
             if s.created_at.elapsed() > SESSION_TTL {
                 sessions.remove(&session_id);
-                return Err(format!(
-                    "ed25519 recovery session expired (TTL): {session_id}"
-                ));
+                return Err(format!("ed25519 recovery session expired (TTL): {session_id}"));
             }
         } else {
             return Err(format!("ed25519 recovery session not found: {session_id}"));
@@ -605,95 +509,51 @@ fn recover_round2(session_id: String, server_payload: &str) -> Result<String, St
     }
 
     let env = parse_wire(server_payload)?;
-    let r2: RefreshR2Payload = decode_payload(&env)?;
-    let server_r2_pkg = deser_pkg::<dkg_r2::Package>(&r2.refresh_round2_pkg)?;
+    let server_r2_inner = env.payload.clone();
 
-    let mut sessions = FROST_RECOVERY_SESSIONS.lock().unwrap();
-    let session = sessions
-        .get_mut(&session_id)
+    let session = FROST_RECOVERY_SESSIONS
+        .lock().unwrap().remove(&session_id)
         .ok_or_else(|| format!("ed25519 recovery session not found: {session_id}"))?;
 
-    let round1_secret = session
-        .round1_secret
-        .take()
-        .ok_or("ed25519 recovery session missing round1_secret")?;
-    let peer_r1 = session
-        .peer_round1_pkg
-        .as_ref()
-        .ok_or("ed25519 recovery session missing peer_round1_pkg")?;
+    let (new_lib_state, client_inner) =
+        ceres_wallet_frost_mpc::recovery_part2(session.lib_state, &session.pending_server_inner)
+            .map_err(|e| format!("recovery_part2: {e}"))?;
 
-    let mut peer_r1_map: BTreeMap<Identifier, dkg_r1::Package> = BTreeMap::new();
-    peer_r1_map.insert(frost_server_identifier(), peer_r1.clone());
+    FROST_RECOVERY_SESSIONS.lock().unwrap().insert(
+        session_id.clone(),
+        FrostRecoverySession {
+            created_at: session.created_at,
+            current_rotation_version: session.current_rotation_version,
+            lib_state: new_lib_state,
+            pending_server_inner: server_r2_inner,
+        },
+    );
 
-    let (round2_secret, round2_pkgs_for_others) =
-        refresh::refresh_dkg_part2(round1_secret, &peer_r1_map)
-            .map_err(|e| format!("frost refresh part2: {e}"))?;
-
-    let own_round2_pkg = round2_pkgs_for_others
-        .get(&frost_server_identifier())
-        .ok_or("frost refresh part2: missing round2 package for server")?
-        .clone();
-
-    session.round2_secret = Some(round2_secret);
-    session.peer_round2_pkg = Some(server_r2_pkg);
-
-    let payload = RefreshR2Payload {
-        refresh_round2_pkg: ser_pkg(&own_round2_pkg)?,
-    };
-    drop(sessions);
-
-    let env_json = encode_wire_payload(&session_id, ProtocolType::Rotation, 2, &payload)?;
+    let env_json = encode_wire_payload_from_inner(&session_id, ProtocolType::Rotation, 2, &client_inner)?;
     make_in_progress(&session_id, ProtocolType::Rotation, 2, env_json)
 }
 
 fn recover_finalize(session_id: String) -> Result<String, String> {
     let session = FROST_RECOVERY_SESSIONS
-        .lock()
-        .unwrap()
-        .remove(&session_id)
+        .lock().unwrap().remove(&session_id)
         .ok_or_else(|| format!("ed25519 recovery session not found: {session_id}"))?;
 
-    let round2_secret = session
-        .round2_secret
-        .ok_or("ed25519 recovery session missing round2_secret")?;
-    let peer_r1 = session
-        .peer_round1_pkg
-        .ok_or("ed25519 recovery session missing peer_round1_pkg")?;
-    let peer_r2 = session
-        .peer_round2_pkg
-        .ok_or("ed25519 recovery session missing peer_round2_pkg")?;
-    let old_kp = session.old_key_package;
-    let old_pkp = session.old_public_key_package;
-    let rv = session.current_rotation_version;
-
-    // Capture old verifying_key bytes for defensive post-refresh assertion.
-    let old_vk_bytes = old_pkp
+    // Capture old verifying_key for the belt-and-braces assertion below.
+    let old_vk_bytes = session.lib_state.old_pub_key_pkg
         .verifying_key()
         .serialize()
         .map_err(|e| format!("verifying_key serialize: {e}"))?;
 
-    let mut r1_map = BTreeMap::new();
-    r1_map.insert(frost_server_identifier(), peer_r1);
-    let mut r2_map = BTreeMap::new();
-    r2_map.insert(frost_server_identifier(), peer_r2);
-
-    // NB: frost-ed25519 v3 argument order — old_pub_key_package, old_key_package
-    let (new_kp, new_pkp) = refresh::refresh_dkg_shares(
-        &round2_secret,
-        &r1_map,
-        &r2_map,
-        old_pkp,
-        old_kp,
-    )
-    .map_err(|e| format!("frost refresh shares: {e}"))?;
+    let (new_kp, new_pkp) =
+        ceres_wallet_frost_mpc::recovery_part3(session.lib_state, &session.pending_server_inner)
+            .map_err(|e| format!("recovery_part3: {e}"))?;
 
     let new_vk_bytes = new_pkp
         .verifying_key()
         .serialize()
         .map_err(|e| format!("verifying_key serialize: {e}"))?;
 
-    // Belt-and-braces: refresh_dkg_shares preserves verifying_key by construction,
-    // but assert it locally to catch any future protocol regression.
+    // Belt-and-braces: refresh preserves verifying_key by construction.
     if new_vk_bytes != old_vk_bytes {
         return Err(
             "ed25519 refresh produced a different verifying_key (refresh_dkg_shares contract violated)"
@@ -709,7 +569,7 @@ fn recover_finalize(session_id: String) -> Result<String, String> {
         mpc_key_id: session_id.clone(),
         address,
         public_key: pubkey_hex,
-        rotation_version: rv + 1,
+        rotation_version: session.current_rotation_version + 1,
         local_encrypted_share,
     };
     make_completed(0, serde_json::to_string(&completed).map_err(|e| e.to_string())?)
@@ -816,6 +676,15 @@ pub fn export_private_key(local_share: String, server_share: String) -> Result<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use frost_ed25519::keys::{
+        dkg::{round1 as dkg_r1, round2 as dkg_r2},
+        refresh,
+    };
+    use ceres_wallet_frost_mpc::wire::{
+        RefreshR1Payload, RefreshR2Payload,
+        encode_inner as fw_encode_inner,
+        decode_inner as fw_decode_inner,
+    };
 
     /// Smoke test the share-envelope round trip without a real DKG run.
     /// Uses FROST trusted-dealer keygen as a stand-in for a key package.
@@ -879,27 +748,24 @@ mod tests {
         (client_kp, server_kp, pkp)
     }
 
-    /// Wrap a `dkg_r1::Package` (which carries a refresh round 1 message in
-    /// frost-ed25519 v3) in the synthetic WireEnvelope JSON the client would
-    /// receive from the server.
     fn wire_for_refresh_r1(session_id: &str, pkg: &dkg_r1::Package) -> String {
         let payload = RefreshR1Payload {
-            refresh_round1_pkg: ser_pkg(pkg).expect("serialize refresh r1 pkg"),
+            refresh_round1_pkg: hex::encode(pkg.serialize().expect("serialize r1 pkg")),
         };
-        encode_wire_payload(session_id, ProtocolType::Rotation, 1, &payload)
+        let inner = fw_encode_inner(&payload).expect("encode refresh r1 inner");
+        encode_wire_payload_from_inner(session_id, ProtocolType::Rotation, 1, &inner)
             .expect("encode r1 wire envelope")
     }
 
     fn wire_for_refresh_r2(session_id: &str, pkg: &dkg_r2::Package) -> String {
         let payload = RefreshR2Payload {
-            refresh_round2_pkg: ser_pkg(pkg).expect("serialize refresh r2 pkg"),
+            refresh_round2_pkg: hex::encode(pkg.serialize().expect("serialize r2 pkg")),
         };
-        encode_wire_payload(session_id, ProtocolType::Rotation, 2, &payload)
+        let inner = fw_encode_inner(&payload).expect("encode refresh r2 inner");
+        encode_wire_payload_from_inner(session_id, ProtocolType::Rotation, 2, &inner)
             .expect("encode r2 wire envelope")
     }
 
-    /// Pull the client's reply WireEnvelope JSON out of a successful
-    /// `MpcRoundResult { status: "continue", client_payload }`.
     fn extract_continue_payload(round_result_json: &str) -> String {
         let r: MpcRoundResult =
             serde_json::from_str(round_result_json).expect("MpcRoundResult JSON");
@@ -907,17 +773,18 @@ mod tests {
         r.client_payload.expect("client_payload present")
     }
 
-    /// Decode the client's reply wire envelope and return the RefreshR1 hex pkg.
     fn parse_client_refresh_r1(wire_json: &str) -> dkg_r1::Package {
         let env: WireEnvelope = serde_json::from_str(wire_json).expect("wire json");
-        let inner: RefreshR1Payload = decode_payload(&env).expect("decode RefreshR1");
-        deser_pkg::<dkg_r1::Package>(&inner.refresh_round1_pkg).expect("hex -> r1 pkg")
+        let inner: RefreshR1Payload = fw_decode_inner(&env.payload).expect("decode RefreshR1");
+        let bytes = hex::decode(&inner.refresh_round1_pkg).expect("hex decode");
+        dkg_r1::Package::deserialize(&bytes).expect("deserialize r1 pkg")
     }
 
     fn parse_client_refresh_r2(wire_json: &str) -> dkg_r2::Package {
         let env: WireEnvelope = serde_json::from_str(wire_json).expect("wire json");
-        let inner: RefreshR2Payload = decode_payload(&env).expect("decode RefreshR2");
-        deser_pkg::<dkg_r2::Package>(&inner.refresh_round2_pkg).expect("hex -> r2 pkg")
+        let inner: RefreshR2Payload = fw_decode_inner(&env.payload).expect("decode RefreshR2");
+        let bytes = hex::decode(&inner.refresh_round2_pkg).expect("hex decode");
+        dkg_r2::Package::deserialize(&bytes).expect("deserialize r2 pkg")
     }
 
     /// Drive the full 3-round refresh against a simulated server, returning
@@ -1104,12 +971,16 @@ mod tests {
             FrostRecoverySession {
                 created_at: expired_at,
                 current_rotation_version: 1,
-                old_key_package: client_kp,
-                old_public_key_package: pkp,
-                round1_secret: None,
-                peer_round1_pkg: None,
-                round2_secret: None,
-                peer_round2_pkg: None,
+                pending_server_inner: String::new(),
+                lib_state: ceres_wallet_frost_mpc::RecoverySessionState {
+                    my_id: frost_client_identifier(),
+                    other_id: frost_server_identifier(),
+                    r1_secret: None,
+                    old_key_pkg: client_kp,
+                    old_pub_key_pkg: pkp,
+                    other_r1_pkg: None,
+                    r2_secret: None,
+                },
             },
         );
 
@@ -1238,8 +1109,9 @@ mod tests {
         let wire_payload = SignR1Payload {
             commitments: ser_pkg(&server_commitments).unwrap(),
         };
+        let inner_encoded = fw_encode_inner(&wire_payload).unwrap();
         let dummy_wire =
-            encode_wire_payload(&session_id, ProtocolType::Dsg, 1, &wire_payload).unwrap();
+            encode_wire_payload_from_inner(&session_id, ProtocolType::Dsg, 1, &inner_encoded).unwrap();
 
         let result = sign(
             session_id,
