@@ -106,6 +106,7 @@ class MpcClient {
     final initData = await _rpcCall(MpcMethod.recovery, {
       'mpcKeyId': mpcKeyId,
       'round': 1,
+      'currentRotationVersion': currentRotationVersion,
     });
     final sessionId = initData['sessionId'] as String;
 

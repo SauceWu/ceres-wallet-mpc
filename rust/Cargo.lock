@@ -256,6 +256,7 @@ dependencies = [
 [[package]]
 name = "ceres_wallet_frost_mpc"
 version = "0.1.0"
+source = "git+https://github.com/SauceWu/ceres_wallet_frost_mpc?branch=master#035866a673b88022eafac0b7b0009f7c072dcef9"
 dependencies = [
  "aes-gcm",
  "base64",

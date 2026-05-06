@@ -7,37 +7,33 @@
 
 [English](README.md) | **中文**
 
-基于两方 ECDSA 的 MPC SDK，为 [Ceres Wallet] 提供密钥管理能力。
+Flutter 双方 MPC SDK — 支持 EVM（DKLs23 ECDSA）与 Solana（FROST-Ed25519 / RFC 9591 Schnorr）。
 
-密码学核心基于 [sl-dkls23](https://github.com/silence-laboratories/dkls23)（DKLs23 协议），Rust 实现 + Dart 编排层，通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 桥接。
+密码学核心基于 [sl-dkls23](https://github.com/silence-laboratories/dkls23) 与 [frost-ed25519](https://github.com/ZcashFoundation/frost)，Rust 实现 + Dart 编排层，通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 桥接。
 
 ## 功能
 
-- **密钥生成（Keygen）** -- 两方 ECDSA 联合生成 secp256k1 密钥，输出 Keyshare + EVM 地址
-- **密钥恢复（Recovery）** -- 基于 DKLs23 key refresh 的密钥轮换，恢复后保持链上地址不变
-- **交易签名（Signing）** -- 两方 ECDSA 协同签名，返回 (r, s, recid)
-- **备份与恢复** -- AES-256-GCM 加密备份信封的生成与解密
-- **密钥导出（Export）** -- 将 MPC 钱包导出为普通钱包，重建完整私钥
-- **EVM 地址派生** -- 从联合公钥推导 EIP-55 校验和地址
-- **传输层无关** -- 宿主应用通过 `MpcTransport` 注入自己的网络层
-- **批量消息优化** -- 协议消息按逻辑轮次批量打包，最小化 HTTP 往返次数
-- **WebSocket 传输示例** -- example app 同时包含 HTTP 与 WebSocket transport 参考实现
+- **EVM（secp256k1 / DKLs23 ECDSA）**
+  - 两方联合密钥生成 → Keyshare + EIP-55 校验和 `0x` 地址
+  - DKLs23 key refresh（密钥轮换，链上地址保持不变）
+  - 两方协同签名 → `(r, s, recid)`
+  - 备份与恢复（AES-256-GCM，HKDF-SHA256）
+  - MPC → 普通钱包导出
+- **Solana（ed25519 / FROST-Schnorr）** *(0.2.0 新增)*
+  - 两方 FROST DKG → Keyshare + base58 SOL 地址
+  - 两方 FROST 签名 → 64 字节 `r || s` Schnorr 签名
+  - 备份信封复用同一 AES-GCM 容器
+- **曲线标记 Keyshare** — v2 信封格式，向后兼容 v0.1.x（原始 DKLs23）份额
+- **传输层无关** — 宿主应用通过 `MpcTransport` 注入自己的网络层
+- **批量消息优化** — 协议消息按逻辑轮次批量打包，最小化 HTTP 往返次数
+- **WebSocket 传输示例** — example app 同时包含 HTTP 与 WebSocket transport 参考实现
 
 > **服务端如何对接？** 参阅 [服务端集成指南](doc/SERVER_INTEGRATION_CN.md)，可运行服务端示例见 [SauceWu/ceres-mpc-server-demo](https://github.com/SauceWu/ceres-mpc-server-demo)。
-
-## 发布状态
-
-- 源码仓库: [SauceWu/ceres-mpc](https://github.com/SauceWu/ceres-mpc)
-- pub.dev 包: [ceres_mpc](https://pub.dev/packages/ceres_mpc)
-- 服务端示例: [SauceWu/ceres-mpc-server-demo](https://github.com/SauceWu/ceres-mpc-server-demo)
-- 分发方式: `pub.dev` 包 + GitHub Releases 预编译原生产物，由 `cargokit` 自动接入
-- 开源协议: MIT
-- 首次发布前: 先清理 git 工作区、推送 release tag、产出 release artifacts，然后再执行 `dart pub publish`
 
 ## 架构
 
 ```
-+-------------------------------------------+©
++-------------------------------------------+
 |             宿主应用 (Host App)              |
 |    (实现 MpcTransport, 管理存储)              |
 +--------------------+-----------------------+
@@ -66,25 +62,6 @@
 - 所有敏感 share 数据在 `toString()` 中自动脱敏为 `[REDACTED]`
 - 会话状态为临时态（内存 Mutex map），协议完成后自动清理
 
-## Share 模型
-
-```
-+-------------------+     日常签名      +-------------------+
-|  deviceLiveShare  | <===============> |   serverShare     |
-|  (设备安全存储)     |    2-of-2 ECDSA   |   (服务端保管)     |
-+-------------------+                  +-------------------+
-         |
-         | 加密备份
-         v
-+------------------------+
-| encryptedDeviceBackup  |    恢复时解密 -> rotation -> 新的一对 share
-| Share (用户自行保管)     |
-+------------------------+
-```
-
-- **签名**：`deviceLiveShare + serverShare`（2-of-2）
-- **恢复**：解密备份 share -> 与服务端执行 rotation -> 生成新的 live share（地址不变）
-
 ## 快速开始
 
 ### 环境要求
@@ -97,15 +74,85 @@
 ```yaml
 # pubspec.yaml
 dependencies:
-  ceres_mpc: ^0.1.0
+  ceres_mpc: ^0.2.0
   web_socket_channel: ^3.0.3 # 仅在使用 WebSocketMpcTransport 时需要
 ```
+
+### Solana 密钥生成（0.2.0 新增）
+
+```dart
+import 'package:ceres_mpc/ceres_mpc.dart';
+
+final client = MpcClient(engine: engine, transport: transport);
+
+// EVM（默认）
+final evmKey = await client.keygen();
+
+// Solana
+final solKey = await client.keygen(curve: Curve.ed25519);
+print(solKey.address);  // base58 SOL 地址，例如 "9WzD..."
+print(solKey.curve);    // "ed25519"
+```
+
+签名时根据 share 内嵌的曲线标记自动派发 — 宿主应用无需在签名时指定曲线：
+
+```dart
+final sig = await client.sign(
+  mpcKeyId: solKey.mpcKeyId,
+  messageHash: hex.encode(serializedSolanaMessageBytes),
+  localEncryptedShare: solKey.localEncryptedShare,
+);
+print(sig.signatureHex); // 64 字节 ed25519 签名，可直接用于 Solana
+```
+
+> **服务端要求：** ed25519 会话需要协调方也实现 FROST-Ed25519。`curve` 字段在 round-1 RPC 参数中发送，并在 `WireEnvelope` 中回显，服务端据此启动对应协议。
+
+### 恢复 Solana 钱包（ed25519，FROST refresh）
+
+```dart
+// 先解密备份份额
+final decrypted = await client.decryptBackup(
+  encryptedBackup: storedBackupEnvelope,
+  password: userPassword,
+);
+
+// MpcClient.recover() 根据 share 信封曲线自动派发。
+// ed25519 路径：3 轮 FROST refresh；verifying_key（SOL 地址）保持不变。
+final result = await client.recover(
+  mpcKeyId: solKey.mpcKeyId,
+  backupShare: decrypted.deviceBackupShare,
+  currentRotationVersion: oldRotationVersion,
+);
+
+assert(result.address == oldAddress);           // SOL 地址不变
+assert(result.rotationVersion == oldRotationVersion + 1);
+```
+
+### 导出 Solana 私钥（ed25519，2-of-2 Lagrange）
+
+```dart
+// 通过 Lagrange 插值重建 FROST 私密标量。
+// 返回 64 个字符的十六进制字符串（32 字节）。
+final exportedHex = await client.exportPrivateKey(
+  localShare: yourEncryptedShare,
+  serverSharePrivate: serverShareJson,
+);
+
+// exportedHex 为 FROST 私密标量（mod q，小端序）。
+// 可直接加载到 ed25519-dalek hazmat 或任何原始标量签名器：
+//   let scalar = Scalar::from_canonical_bytes(hex::decode(exportedHex)?)?;
+
+// 导出后，对同一份额的签名调用将被拒绝：
+//   client.sign(...) → 抛出 MpcProtocolException("signing rejected: keyshare has been exported")
+```
+
+> **警告 — ed25519 导出注意事项：** 导出的 32 字节是 **FROST 私密标量**（canonical mod-q 小端序），**不是** RFC 8032 种子。可直接加载到 `ed25519-dalek` 的 hazmat `ExpandedSecretKey` 及其他原始标量 Schnorr 签名器，但**无法**作为 24 词助记词种子导入 Phantom / Solflare — 这些钱包通过 SHA-512 重新扩展种子，该操作是单向的，这是分布式密钥生成的固有限制。
 
 ## Native 分发方式
 
 本包是标准 Flutter FFI plugin，发布包内保留 Rust 源码，并通过 `cargokit` 接入构建流程。
 
-面向普通移动端用户的推荐路径是：
+面向普通移动端用户的推荐路径：
 
 - 从 `pub.dev` 安装包
 - 构建时由 `cargokit` 自动处理 native library
@@ -116,7 +163,7 @@ dependencies:
 fallback 行为：
 
 - 若当前 target 已有 release 产物，则直接使用预编译二进制
-- 若当前 target 未被 release 覆盖，则可能回退到本地 Rust 编译
+- 若当前 target 未被 release 覆盖，则回退到本地 Rust 编译
 
 本包不要求用户手动下载 AAR 或 XCFramework。
 
@@ -218,19 +265,21 @@ rust/
      v  KeygenResult                    v
 ```
 
-DKLs23 协议内部为 4 轮，但批量优化将 HTTP 往返压缩到 **3 次**。每轮将所有协议消息（ASK + broadcast + P2P）批量打包到单个 `WireEnvelope` 的 `payloads` 数组中，将 DKG 从 ~13 次 HTTP 调用减少到 3 次。Recovery 和 Sign 遵循相同模式。
+DKLs23 协议内部为 4 轮，但批量优化将 HTTP 往返压缩到 **3 次**。每轮将所有协议消息（ASK + broadcast + P2P）批量打包到单个 `WireEnvelope` 的 `payloads` 数组中，将 DKG 从约 13 次 HTTP 调用减少到 3 次。Recovery 和 Sign 遵循相同模式。
 
-> **提示：** 使用 `WebSocketMpcTransport` 保持持久连接 — 避免每次往返的 TCP 握手开销。
+> **提示：** 使用 `WebSocketMpcTransport` 保持持久连接，避免每次往返的 TCP 握手开销。
 
 ## 密码学依赖
 
 | Crate | 用途 |
 |-------|------|
-| [sl-dkls23](https://crates.io/crates/sl-dkls23) 1.0.0-beta | DKLs23 threshold ECDSA (keygen, sign, key refresh, key export) |
-| [sl-mpc-mate](https://crates.io/crates/sl-mpc-mate) 1.0.0-beta | MPC coordination (Relay trait, message routing) |
-| [k256](https://crates.io/crates/k256) 0.13 | secp256k1 elliptic curve primitives |
-| [tokio](https://crates.io/crates/tokio) 1 | Async runtime for protocol bridge |
-| [aes-gcm](https://crates.io/crates/aes-gcm) 0.10 | AES-256-GCM backup encryption |
+| [sl-dkls23](https://crates.io/crates/sl-dkls23) 1.0.0-beta | DKLs23 threshold ECDSA（EVM keygen, sign, key refresh, key export） |
+| [sl-mpc-mate](https://crates.io/crates/sl-mpc-mate) 1.0.0-beta | MPC 协调（Relay trait, message routing） |
+| [k256](https://crates.io/crates/k256) 0.13 | secp256k1 椭圆曲线原语 |
+| [frost-ed25519](https://crates.io/crates/frost-ed25519) 3.0.0 | FROST(Ed25519, SHA-512) — RFC 9591 Schnorr 门限签名（Solana） |
+| [bs58](https://crates.io/crates/bs58) 0.5 | Solana 地址 Base58 编码 |
+| [tokio](https://crates.io/crates/tokio) 1 | DKLs23 relay 异步运行时 |
+| [aes-gcm](https://crates.io/crates/aes-gcm) 0.10 | AES-256-GCM 备份加密 |
 
 ## 运行测试
 
@@ -259,7 +308,9 @@ cd rust && cargo test
 - [x] DKLs23 迁移（sl-dkls23 v1.0.0-beta）
 - [x] WebSocket 传输（与 HTTP 并存）
 - [x] 批量消息优化（基于 Notify 信号的按轮次批量）
-- [ ] 多链支持（EVM 以外）
+- [x] Solana 支持（FROST-Ed25519，0.2.0）
+- [x] ed25519 恢复 / 私钥导出（已发布 0.2.1）
+- [ ] 多链支持（Bitcoin / Tron 等）
 
 ## 安全
 
